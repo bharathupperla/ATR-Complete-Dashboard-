@@ -1,0 +1,2365 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Signal Watch — Quantitative Momentum Intelligence</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet" />
+<style>
+  html, body, #root { height: 100%; }
+  body {
+    margin: 0;
+    background: #05080f;
+    color: #e6edf7;
+    font-family: 'Chakra Petch', system-ui, sans-serif;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: geometricPrecision;
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  ::selection { background: rgba(0, 229, 255, 0.35); color: #fff; }
+  /* Custom scrollbar */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: #050a14; }
+  ::-webkit-scrollbar-thumb { background: #1a2d4a; border-radius: 4px; }
+  ::-webkit-scrollbar-thumb:hover { background: #2c4673; }
+  button { font-family: inherit; }
+  textarea, input { font-family: 'Space Mono', monospace; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
+<script src="https://unpkg.com/recharts@2.12.7/umd/Recharts.js"></script>
+
+<script type="text/babel" data-presets="env,react">
+// lib.jsx — hooks, helpers, palette, mock data
+// Set USE_LIVE_DATA = true to hit /api/stocks and /api/portfolio
+const USE_LIVE_DATA = false;
+
+const { useState, useEffect, useRef, useCallback, useMemo, useLayoutEffect } = React;
+
+// =============================================================
+// PALETTE
+// =============================================================
+const PALETTE = {
+  bg: '#05080f',
+  surface: '#0b1322',
+  surfaceHi: '#121b2e',
+  border: '#1d2a44',
+  borderHi: '#2a3a5a',
+  text: '#e6edf7',
+  textDim: '#8b99b5',
+  textMute: '#4e5e7d',
+  bullish: '#2dd49b',
+  bearish: '#f25068',
+  neutral: '#8c7df0',
+  amber: '#e8a23a',
+  cyan: '#3fbdf2',
+};
+
+const SIGNAL_META = {
+  'BUY MORE':   { color: PALETTE.bullish, label: 'BUY MORE',   short: 'BUY'  },
+  'SQUARE OFF': { color: PALETTE.bearish, label: 'SQUARE OFF', short: 'EXIT' },
+  'NEUTRAL':    { color: PALETTE.neutral, label: 'NEUTRAL',    short: 'HOLD' },
+};
+
+// =============================================================
+// GLOBAL ANIMATIONS — injected once
+// =============================================================
+function injectGlobalStyles() {
+  if (document.getElementById('sw-global-anim')) return;
+  const s = document.createElement('style');
+  s.id = 'sw-global-anim';
+  s.textContent = `
+@keyframes sw-pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 1; box-shadow: 0 0 0 0 var(--c, #10d97e); }
+  50%      { transform: scale(1.15); opacity: .85; box-shadow: 0 0 0 6px rgba(0,0,0,0); }
+}
+@keyframes sw-breathe {
+  0%, 100% { box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.16),
+      inset 0 -1px 0 rgba(0,0,0,0.55),
+      inset 0 0 0 1px rgba(255,255,255,0.04),
+      0 0 12px var(--g, rgba(16,217,126,0.35));
+  }
+  50%      { box-shadow:
+      inset 0 1px 0 rgba(255,255,255,0.22),
+      inset 0 -1px 0 rgba(0,0,0,0.55),
+      inset 0 0 0 1px rgba(255,255,255,0.06),
+      0 0 22px var(--g2, rgba(16,217,126,0.65));
+  }
+}
+@keyframes sw-scanline {
+  0%   { transform: translateY(100%); opacity: 0; }
+  10%  { opacity: 1; }
+  90%  { opacity: 1; }
+  100% { transform: translateY(-200%); opacity: 0; }
+}
+@keyframes sw-grid-shift {
+  0%   { background-position: 0 0; }
+  100% { background-position: 0 60px; }
+}
+@keyframes sw-shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+@keyframes sw-card-in {
+  0%   { opacity: 0; transform: perspective(900px) rotateX(12deg) translateY(28px); }
+  100% { opacity: 1; transform: perspective(900px) rotateX(4deg) translateY(0); }
+}
+@keyframes sw-spring-up {
+  0%   { opacity: 0; transform: translateY(40px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes sw-drawer-right {
+  0%   { transform: translateX(100%); }
+  100% { transform: translateX(0); }
+}
+@keyframes sw-drawer-bottom {
+  0%   { transform: translateY(100%); }
+  100% { transform: translateY(0); }
+}
+@keyframes sw-spin {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+@keyframes sw-draw {
+  0%   { stroke-dashoffset: 1000; }
+  100% { stroke-dashoffset: 0; }
+}
+@keyframes sw-glow-text {
+  0%, 100% { filter: drop-shadow(0 0 18px rgba(0,229,255,0.35)) drop-shadow(0 0 60px rgba(16,217,126,0.18)); }
+  50%      { filter: drop-shadow(0 0 28px rgba(0,229,255,0.55)) drop-shadow(0 0 80px rgba(245,158,11,0.22)); }
+}
+.sw-shimmer {
+  background: linear-gradient(90deg, #0a1220 0%, #122038 50%, #0a1220 100%);
+  background-size: 200% 100%;
+  animation: sw-shimmer 1.6s linear infinite;
+}
+`;
+  document.head.appendChild(s);
+}
+
+// =============================================================
+// HOOKS
+// =============================================================
+
+// Count up from 0 → target with cubic ease-out.
+function useCountUp(target, duration = 1100, deps = []) {
+  const [v, setV] = useState(0);
+  const startRef = useRef(0);
+  const fromRef  = useRef(0);
+  useEffect(() => {
+    fromRef.current = 0;
+    startRef.current = performance.now();
+    let raf = 0;
+    const tick = (t) => {
+      const k = Math.min(1, (t - startRef.current) / duration);
+      const eased = 1 - Math.pow(1 - k, 3);
+      setV(fromRef.current + (target - fromRef.current) * eased);
+      if (k < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+    // eslint-disable-next-line
+  }, [target, duration, ...deps]);
+  return v;
+}
+
+// Cursor-tracked tilt. Returns ref + style.
+function useCardTilt({ max = 9, lift = 14, baseX = 4 } = {}) {
+  const ref = useRef(null);
+  const [hover, setHover] = useState(false);
+  const [t, setT] = useState({ rx: baseX, ry: 0, mx: 50, my: 50 });
+
+  const onMove = useCallback((e) => {
+    const el = ref.current;
+    if (!el) return;
+    const r = el.getBoundingClientRect();
+    const cx = (e.clientX - r.left) / r.width;
+    const cy = (e.clientY - r.top) / r.height;
+    const ry = (cx - 0.5) * (max * 2);
+    const rx = baseX + (0.5 - cy) * (max * 2);
+    setT({ rx, ry, mx: cx * 100, my: cy * 100 });
+  }, [max, baseX]);
+
+  const onEnter = useCallback(() => setHover(true), []);
+  const onLeave = useCallback(() => { setHover(false); setT({ rx: baseX, ry: 0, mx: 50, my: 50 }); }, [baseX]);
+
+  const style = {
+    transform: `perspective(900px) rotateX(${t.rx}deg) rotateY(${t.ry}deg) translateZ(0) translateY(${hover ? -lift : 0}px)`,
+    transition: hover ? 'transform 90ms linear, box-shadow 200ms ease' : 'transform 380ms cubic-bezier(.2,.8,.2,1), box-shadow 380ms ease',
+    willChange: 'transform',
+  };
+
+  const handlers = { onMouseMove: onMove, onMouseEnter: onEnter, onMouseLeave: onLeave };
+  return { ref, style, handlers, hover, mx: t.mx, my: t.my };
+}
+
+function useNow(intervalMs = 1000) {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), intervalMs);
+    return () => clearInterval(id);
+  }, [intervalMs]);
+  return now;
+}
+
+// Media-query hook
+function useMediaQuery(query) {
+  const [match, setMatch] = useState(() => typeof window !== 'undefined' && window.matchMedia(query).matches);
+  useEffect(() => {
+    const mq = window.matchMedia(query);
+    const fn = (e) => setMatch(e.matches);
+    mq.addEventListener('change', fn);
+    return () => mq.removeEventListener('change', fn);
+  }, [query]);
+  return match;
+}
+
+// =============================================================
+// FORMATTERS
+// =============================================================
+const fmtPct  = (x, d = 2) => `${x >= 0 ? '+' : ''}${(x).toFixed(d)}%`;
+const fmtUsd  = (x, d = 2) => `${x < 0 ? '-' : ''}${Math.abs(x).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d })}`;
+const fmtNum  = (x, d = 2) => x.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+const fmtTime = (d) => d.toLocaleTimeString('en-US', { hour12: false }) + ' UTC' + (d.getTimezoneOffset() <= 0 ? '+' : '-') + Math.abs(d.getTimezoneOffset() / 60).toString().padStart(2, '0');
+const fmtDate = (s) => {
+  const d = (s instanceof Date) ? s : new Date(s);
+  return d.toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: '2-digit' });
+};
+
+// =============================================================
+// MOCK DATA
+// =============================================================
+function genHistory(seed, weeks, base, vol, drift) {
+  // deterministic pseudo-random
+  let x = seed;
+  const r = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+  const arr = [];
+  let v = base;
+  for (let i = 0; i < weeks; i++) {
+    v = Math.max(0.4, v + (r() - 0.5) * vol + drift);
+    arr.push(+v.toFixed(3));
+  }
+  return arr;
+}
+
+function genReturnSeries(seed, weeks, totalReturn) {
+  let x = seed;
+  const r = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+  const arr = [];
+  let cum = 0;
+  for (let i = 0; i < weeks; i++) {
+    const target = (totalReturn / (weeks - 1)) * i;
+    const noise = (r() - 0.5) * 4.2;
+    cum = target + noise;
+    arr.push(+cum.toFixed(2));
+  }
+  arr[arr.length - 1] = totalReturn;
+  return arr;
+}
+
+const STOCKS = [
+  {
+    ticker: 'ALB',     name: 'Albemarle Corp',
+    signal: 'BUY MORE', sector: 'Lithium / Materials',
+    entryDate: '2024-08-15', entryPrice: 167.86, livePrice: 224.58,
+    returnPct: 33.78, weekDelta: 2.41, prevWeekDelta: 1.18,
+    atr: { current: 4.82, p25: 3.10, p75: 5.40, history: genHistory(11, 13, 4.0, 0.55, 0.06) },
+    trend: { slope: 2.41, angle: 23.6, r2: 0.87 },
+  },
+  {
+    ticker: 'LRCX',    name: 'Lam Research',
+    signal: 'SQUARE OFF', sector: 'Semiconductors',
+    entryDate: '2024-11-04', entryPrice: 78.10, livePrice: 91.42,
+    returnPct: 17.06, weekDelta: -1.95, prevWeekDelta: -0.82,
+    atr: { current: 2.18, p25: 2.40, p75: 4.20, history: genHistory(22, 13, 3.6, 0.45, -0.12) },
+    trend: { slope: 0.84, angle: 9.1, r2: 0.41 },
+  },
+  {
+    ticker: 'GLW',     name: 'Corning Inc',
+    signal: 'SQUARE OFF', sector: 'Specialty Glass',
+    entryDate: '2025-01-12', entryPrice: 41.55, livePrice: 47.30,
+    returnPct: 13.84, weekDelta: -0.62, prevWeekDelta: -1.04,
+    atr: { current: 1.12, p25: 1.55, p75: 2.80, history: genHistory(7, 13, 2.2, 0.32, -0.09) },
+    trend: { slope: 0.51, angle: 5.4, r2: 0.32 },
+  },
+  {
+    ticker: 'FIX',     name: 'Comfort Systems USA',
+    signal: 'BUY MORE', sector: 'HVAC / Industrials',
+    entryDate: '2024-06-21', entryPrice: 1165.63, livePrice: 1782.04,
+    returnPct: 52.88, weekDelta: 3.18, prevWeekDelta: 2.06,
+    atr: { current: 38.20, p25: 22.50, p75: 36.10, history: genHistory(31, 13, 28, 3.1, 0.85) },
+    trend: { slope: 3.92, angle: 31.7, r2: 0.92 },
+  },
+  {
+    ticker: 'NVDA',    name: 'NVIDIA Corp',
+    signal: 'BUY MORE', sector: 'GPU / AI Compute',
+    entryDate: '2024-04-08', entryPrice: 89.42, livePrice: 142.67,
+    returnPct: 59.55, weekDelta: 4.02, prevWeekDelta: 3.41,
+    atr: { current: 6.48, p25: 4.10, p75: 6.20, history: genHistory(13, 13, 4.6, 0.62, 0.18) },
+    trend: { slope: 4.55, angle: 35.2, r2: 0.94 },
+  },
+  {
+    ticker: 'TSLA',    name: 'Tesla Inc',
+    signal: 'SQUARE OFF', sector: 'EV / Energy',
+    entryDate: '2024-09-30', entryPrice: 248.50, livePrice: 211.18,
+    returnPct: -15.02, weekDelta: -3.40, prevWeekDelta: -2.85,
+    atr: { current: 9.12, p25: 5.40, p75: 8.80, history: genHistory(41, 13, 7.4, 1.1, 0.05) },
+    trend: { slope: -1.85, angle: -16.8, r2: 0.61 },
+  },
+  {
+    ticker: 'AAPL',    name: 'Apple Inc',
+    signal: 'NEUTRAL', sector: 'Consumer Tech',
+    entryDate: '2025-02-14', entryPrice: 226.10, livePrice: 232.84,
+    returnPct: 2.98, weekDelta: 0.21, prevWeekDelta: -0.15,
+    atr: { current: 3.20, p25: 2.80, p75: 4.10, history: genHistory(53, 13, 3.4, 0.30, -0.01) },
+    trend: { slope: 0.18, angle: 1.8, r2: 0.12 },
+  },
+  {
+    ticker: 'MSFT',    name: 'Microsoft Corp',
+    signal: 'NEUTRAL', sector: 'Cloud / Software',
+    entryDate: '2025-01-28', entryPrice: 414.20, livePrice: 426.55,
+    returnPct: 2.98, weekDelta: 0.45, prevWeekDelta: 0.62,
+    atr: { current: 5.60, p25: 4.90, p75: 6.80, history: genHistory(67, 13, 5.7, 0.44, 0.01) },
+    trend: { slope: 0.32, angle: 3.1, r2: 0.18 },
+  },
+];
+
+// Attach derived data to each
+STOCKS.forEach((s, i) => {
+  s.weeksHeld = Math.max(1, Math.round((Date.now() - new Date(s.entryDate).getTime()) / (7 * 86400000)));
+  s.returnHistory = genReturnSeries(i * 7 + 1, Math.min(s.weeksHeld, 26), s.returnPct);
+});
+
+const PORTFOLIO_HOLDINGS = [
+  { ticker: 'ALB',  qty: 59.85,  entry: 167.86,  live: 224.58 },
+  { ticker: 'FIX',  qty: 8.90,   entry: 1165.63, live: 1782.04 },
+  { ticker: 'NVDA', qty: 124.0,  entry: 89.42,   live: 142.67 },
+  { ticker: 'LRCX', qty: 142.5,  entry: 78.10,   live: 91.42 },
+  { ticker: 'GLW',  qty: 308.0,  entry: 41.55,   live: 47.30 },
+  { ticker: 'TSLA', qty: 64.20,  entry: 248.50,  live: 211.18 },
+  { ticker: 'AAPL', qty: 70.10,  entry: 226.10,  live: 232.84 },
+  { ticker: 'MSFT', qty: 38.40,  entry: 414.20,  live: 426.55 },
+  { ticker: 'AMD',  qty: 95.00,  entry: 138.40,  live: 162.18 },
+  { ticker: 'AVGO', qty: 22.50,  entry: 1410.20, live: 1602.40 },
+  { ticker: 'ASML', qty: 14.80,  entry: 712.50,  live: 845.30 },
+  { ticker: 'CRM',  qty: 48.00,  entry: 281.40,  live: 308.10 },
+  { ticker: 'NOW',  qty: 19.20,  entry: 826.40,  live: 942.55 },
+  { ticker: 'PANW', qty: 41.10,  entry: 322.40,  live: 348.20 },
+  { ticker: 'INTU', qty: 33.50,  entry: 612.80,  live: 645.10 },
+  { ticker: 'ORCL', qty: 88.00,  entry: 142.50,  live: 168.40 },
+  { ticker: 'GOOGL',qty: 105.0,  entry: 168.20,  live: 182.45 },
+  { ticker: 'META', qty: 28.50,  entry: 482.10,  live: 568.30 },
+  { ticker: 'CRWD', qty: 26.00,  entry: 312.50,  live: 286.40 },
+  { ticker: 'SNOW', qty: 52.00,  entry: 168.20,  live: 152.40 },
+];
+
+PORTFOLIO_HOLDINGS.forEach((h) => {
+  h.invested  = h.qty * h.entry;
+  h.market    = h.qty * h.live;
+  h.pnl       = h.market - h.invested;
+  h.returnPct = ((h.live - h.entry) / h.entry) * 100;
+});
+
+const PORTFOLIO_REALIZED_PNL = 18420.55;
+
+const PORTFOLIO = {
+  holdings: PORTFOLIO_HOLDINGS,
+  realizedPnl: PORTFOLIO_REALIZED_PNL,
+  signal: 'BUY MORE',
+  totalPnl:
+    PORTFOLIO_HOLDINGS.reduce((a, h) => a + h.pnl, 0) + PORTFOLIO_REALIZED_PNL,
+  invested: PORTFOLIO_HOLDINGS.reduce((a, h) => a + h.invested, 0),
+  market:   PORTFOLIO_HOLDINGS.reduce((a, h) => a + h.market, 0),
+  atr1W: 4.82,
+  atr1M: 18.40,
+  atrHistory: (function () {
+    const w = [];
+    let v1 = 3.6, v2 = 14.2;
+    let x = 99;
+    const r = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+    const start = new Date('2025-07-04').getTime();
+    for (let i = 0; i < 42; i++) {
+      v1 = Math.max(1.5, v1 + (r() - 0.5) * 0.6 + 0.05);
+      v2 = Math.max(8,   v2 + (r() - 0.5) * 1.2 + 0.18);
+      const dt = new Date(start + i * 7 * 86400000);
+      w.push({ week: `W${i + 1}`, idx: i, dateMs: dt.getTime(), date: dt.toISOString().slice(0,10), atr1W: +v1.toFixed(2), atr1M: +v2.toFixed(2) });
+    }
+    return w;
+  })(),
+  returnHistory: (function () {
+    const w = [];
+    let cum = 0;
+    let x = 17;
+    const r = () => { x = (x * 9301 + 49297) % 233280; return x / 233280; };
+    const start = new Date('2025-07-04').getTime();
+    const N = 42;
+    for (let i = 0; i < N; i++) {
+      const target = (74.30 / (N - 1)) * i;
+      const noise = (r() - 0.5) * 6.6;
+      cum = +(target + noise).toFixed(2);
+      const dt = new Date(start + i * 7 * 86400000);
+      w.push({ week: `W${i + 1}`, idx: i, dateMs: dt.getTime(), date: dt.toISOString().slice(0,10), ret: cum });
+    }
+    w[w.length - 1].ret = 74.30;
+    return w;
+  })(),
+  trend: { slope: 1.43, angle: 55.12, r2: 0.582 },
+  ytdReturn: 74.30,
+  metrics: {
+    bestWeek:  { week: 'W18', value: 6.42 },
+    worstWeek: { week: 'W07', value: -3.18 },
+    sharpe: 1.84,
+    maxDrawdown: -8.42,
+    winRate: 68,
+    volatility: 14.6,
+  },
+};
+
+// =============================================================
+// SHARED PRIMITIVES
+// =============================================================
+
+// 3D extruded panel base — shadow stack + bevel
+function panelShadow(hover = false, depth = 1) {
+  if (hover) {
+    return [
+      'inset 0 1px 0 rgba(255,255,255,0.10)',
+      'inset 0 -1px 0 rgba(0,0,0,0.65)',
+      'inset 0 0 0 1px rgba(255,255,255,0.04)',
+      '0 2px 0 rgba(0,0,0,0.6)',
+      '0 16px 30px rgba(0,0,0,0.55)',
+      '0 40px 80px rgba(0,0,0,0.65)',
+      '0 0 0 1px rgba(255,255,255,0.02)',
+    ].join(', ');
+  }
+  return [
+    'inset 0 1px 0 rgba(255,255,255,0.07)',
+    'inset 0 -1px 0 rgba(0,0,0,0.55)',
+    'inset 0 0 0 1px rgba(255,255,255,0.03)',
+    `0 ${2 * depth}px 0 rgba(0,0,0,0.55)`,
+    `0 ${10 * depth}px 24px rgba(0,0,0,0.45)`,
+    `0 ${24 * depth}px 60px rgba(0,0,0,0.5)`,
+  ].join(', ');
+}
+
+function PerspectiveGrid() {
+  return (
+    <div
+      aria-hidden
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 0,
+        pointerEvents: 'none',
+        perspective: '900px',
+        perspectiveOrigin: '50% 50%',
+        overflow: 'hidden',
+      }}>
+      {/* Receding floor */}
+      <div style={{
+        position: 'absolute',
+        left: '-50%',
+        right: '-50%',
+        top: '55%',
+        height: '160%',
+        transform: 'rotateX(75deg)',
+        transformOrigin: 'top center',
+        backgroundImage:
+          'linear-gradient(rgba(0,229,255,0.18) 1px, transparent 1px),' +
+          'linear-gradient(90deg, rgba(0,229,255,0.12) 1px, transparent 1px)',
+        backgroundSize: '60px 60px, 60px 60px',
+        animation: 'sw-grid-shift 7s linear infinite',
+        maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.45) 35%, transparent 75%)',
+        WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.9) 0%, rgba(0,0,0,0.45) 35%, transparent 75%)',
+      }} />
+
+      {/* Vignette glow at vanishing point */}
+      <div style={{
+        position: 'absolute',
+        left: '50%',
+        top: '50%',
+        width: 700,
+        height: 700,
+        marginLeft: -350,
+        marginTop: -550,
+        background: 'radial-gradient(closest-side, rgba(0,229,255,0.10), rgba(0,0,0,0) 70%)',
+        filter: 'blur(20px)',
+      }} />
+
+      {/* Scanline */}
+      <div style={{
+        position: 'absolute',
+        left: 0, right: 0,
+        bottom: 0,
+        height: 240,
+        background: 'linear-gradient(to top, rgba(0,229,255,0.10), rgba(0,229,255,0.0))',
+        animation: 'sw-scanline 9s linear infinite',
+        mixBlendMode: 'screen',
+      }} />
+
+      {/* Horizon line */}
+      <div style={{
+        position: 'absolute',
+        left: 0, right: 0,
+        top: '55%',
+        height: 1,
+        background: 'linear-gradient(90deg, transparent, rgba(0,229,255,0.55), transparent)',
+        boxShadow: '0 0 12px rgba(0,229,255,0.4)',
+      }} />
+
+      {/* Top vignette to anchor content */}
+      <div style={{
+        position: 'absolute',
+        inset: 0,
+        background: 'radial-gradient(ellipse at center top, rgba(2,4,8,0) 0%, rgba(2,4,8,0.55) 60%, rgba(2,4,8,0.95) 100%)',
+      }} />
+    </div>
+  );
+}
+
+// SignalBadge — embossed pill with breath glow
+function SignalBadge({ signal, size = 'md' }) {
+  const meta = SIGNAL_META[signal] || SIGNAL_META.NEUTRAL;
+  const pad = size === 'sm' ? '4px 8px' : size === 'lg' ? '8px 14px' : '6px 11px';
+  const fs  = size === 'sm' ? 10 : size === 'lg' ? 13 : 11;
+  return (
+    <span
+      style={{
+        '--c': meta.color,
+        '--g':  meta.color + '4D',
+        '--g2': meta.color + 'B3',
+        display: 'inline-flex',
+        alignItems: 'center',
+        gap: 6,
+        padding: pad,
+        fontFamily: 'Chakra Petch, sans-serif',
+        fontWeight: 700,
+        fontSize: fs,
+        letterSpacing: '0.14em',
+        color: meta.color,
+        background: `linear-gradient(180deg, ${meta.color}1F, ${meta.color}0A)`,
+        border: `1px solid ${meta.color}55`,
+        borderRadius: 999,
+        boxShadow:
+          'inset 0 1px 0 rgba(255,255,255,0.16), inset 0 -1px 0 rgba(0,0,0,0.55), inset 0 0 0 1px rgba(255,255,255,0.04), 0 0 14px ' + meta.color + '55',
+        animation: 'sw-breathe 3.2s ease-in-out infinite',
+        textTransform: 'uppercase',
+        whiteSpace: 'nowrap',
+      }}>
+      <span style={{
+        width: 6, height: 6, borderRadius: 999, background: meta.color,
+        boxShadow: `0 0 8px ${meta.color}`,
+      }} />
+      {meta.label}
+    </span>
+  );
+}
+
+function PulsingDot({ color = PALETTE.bullish, size = 8 }) {
+  return (
+    <span
+      aria-hidden
+      style={{
+        '--c': color,
+        display: 'inline-block',
+        width: size, height: size,
+        borderRadius: '50%',
+        background: color,
+        boxShadow: `0 0 10px ${color}, 0 0 24px ${color}55`,
+        animation: 'sw-pulse-dot 1.6s ease-in-out infinite',
+      }} />
+  );
+}
+
+// Embossed inline button
+function TermButton({ children, onClick, color = PALETTE.cyan, ghost = false, style = {}, ...rest }) {
+  return (
+    <button
+      onClick={onClick}
+      {...rest}
+      style={{
+        background: ghost ? 'transparent' : `linear-gradient(180deg, ${color}26, ${color}0F)`,
+        color: PALETTE.text,
+        border: `1px solid ${color}55`,
+        borderRadius: 6,
+        padding: '10px 16px',
+        fontFamily: 'Chakra Petch, sans-serif',
+        fontWeight: 600,
+        letterSpacing: '0.14em',
+        textTransform: 'uppercase',
+        cursor: 'pointer',
+        boxShadow: ghost ? 'none' : `inset 0 1px 0 rgba(255,255,255,0.10), inset 0 -1px 0 rgba(0,0,0,0.5), 0 0 14px ${color}33`,
+        transition: 'transform 120ms ease, box-shadow 200ms ease',
+        ...style,
+      }} />
+  );
+}
+
+// =============================================================
+// TERMINAL CHROME (header)
+// =============================================================
+function TerminalHeader({ title = 'SIGNAL WATCH', mode, onBack, badges = [] }) {
+  const now = useNow(1000);
+  const [spin, setSpin] = useState(false);
+  return (
+    <header style={{
+      position: 'sticky',
+      top: 0,
+      zIndex: 30,
+      height: 64,
+      display: 'grid',
+      gridTemplateColumns: 'auto 1fr auto',
+      alignItems: 'center',
+      padding: '0 clamp(14px, 3vw, 28px)',
+      background: 'linear-gradient(180deg, rgba(10,18,32,0.85), rgba(10,18,32,0.65))',
+      backdropFilter: 'blur(14px) saturate(1.4)',
+      WebkitBackdropFilter: 'blur(14px) saturate(1.4)',
+      borderBottom: `1px solid ${PALETTE.border}`,
+      boxShadow: '0 1px 0 rgba(255,255,255,0.04), 0 8px 30px rgba(0,0,0,0.5)',
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        {onBack ? (
+          <button onClick={onBack} aria-label="Back"
+            style={{
+              width: 36, height: 36, borderRadius: 6,
+              background: 'rgba(255,255,255,0.03)',
+              border: `1px solid ${PALETTE.border}`,
+              color: PALETTE.textDim,
+              cursor: 'pointer',
+              display: 'grid', placeItems: 'center',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05), inset 0 -1px 0 rgba(0,0,0,0.5)',
+            }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M15 6 L9 12 L15 18" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        ) : null}
+        <PulsingDot color={PALETTE.bullish} />
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <span style={{
+            fontFamily: 'Chakra Petch', fontWeight: 700,
+            letterSpacing: '0.22em', fontSize: 14, color: PALETTE.text,
+          }}>{title}</span>
+          {mode ? (
+            <span style={{
+              fontFamily: 'Space Mono', fontSize: 10,
+              letterSpacing: '0.2em', color: PALETTE.textMute,
+              borderLeft: `1px solid ${PALETTE.border}`, paddingLeft: 10,
+            }}>{mode}</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div style={{ display: 'flex', justifyContent: 'center', gap: 8, flexWrap: 'wrap' }}>
+        {badges}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div style={{
+          fontFamily: 'Space Mono', fontSize: 12,
+          color: PALETTE.textDim,
+          letterSpacing: '0.08em',
+          padding: '6px 10px',
+          border: `1px solid ${PALETTE.border}`,
+          background: 'rgba(0,0,0,0.35)',
+          borderRadius: 4,
+        }}>
+          {now.toLocaleTimeString('en-US', { hour12: false })}
+        </div>
+        <button
+          onClick={() => { setSpin(true); setTimeout(() => setSpin(false), 800); }}
+          aria-label="Refresh"
+          style={{
+            width: 36, height: 36, borderRadius: 6,
+            background: 'linear-gradient(180deg, rgba(0,229,255,0.18), rgba(0,229,255,0.05))',
+            border: `1px solid ${PALETTE.cyan}55`,
+            color: PALETTE.cyan, cursor: 'pointer',
+            display: 'grid', placeItems: 'center',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.12), 0 0 12px rgba(0,229,255,0.3)',
+          }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"
+               style={{ animation: spin ? 'sw-spin 0.8s cubic-bezier(.4,0,.2,1)' : 'none' }}>
+            <path d="M21 12a9 9 0 1 1-3.5-7.1" strokeLinecap="round" />
+            <path d="M21 4 v5 h-5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// =============================================================
+// EXPORT EVERYTHING TO WINDOW
+// =============================================================
+Object.assign(window, {
+  USE_LIVE_DATA,
+  PALETTE, SIGNAL_META,
+  injectGlobalStyles,
+  useCountUp, useCardTilt, useNow, useMediaQuery,
+  fmtPct, fmtUsd, fmtNum, fmtTime, fmtDate,
+  STOCKS, PORTFOLIO,
+  panelShadow,
+  PerspectiveGrid, SignalBadge, PulsingDot, TermButton, TerminalHeader,
+});
+
+
+//============================================
+
+// entry.jsx — Entry/landing screen with starfield, mode cards, input panels
+const { useState: _eUseState, useEffect: _eUseEffect, useRef: _eUseRef } = React;
+
+// =============================================================
+// STARFIELD
+// =============================================================
+function Starfield() {
+  const ref = _eUseRef(null);
+  _eUseEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const ctx = cv.getContext('2d');
+    let w = 0, h = 0, dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const N = 150;
+    const stars = [];
+    function resize() {
+      w = cv.clientWidth; h = cv.clientHeight;
+      cv.width = w * dpr; cv.height = h * dpr;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    }
+    function init() {
+      stars.length = 0;
+      for (let i = 0; i < N; i++) {
+        const z = Math.random();
+        stars.push({
+          x: Math.random() * w,
+          y: Math.random() * h,
+          z,
+          r: 0.3 + z * 1.6,
+          vx: (Math.random() - 0.5) * 0.04,
+          vy: (Math.random() - 0.5) * 0.025,
+          tw: Math.random() * Math.PI * 2,
+          col: Math.random() < 0.85 ? '#cfe6ff' : (Math.random() < 0.5 ? '#00e5ff' : '#10d97e'),
+        });
+      }
+    }
+    resize(); init();
+    window.addEventListener('resize', () => { resize(); init(); });
+
+    let raf = 0, t0 = performance.now();
+    function loop(t) {
+      const dt = (t - t0) / 16.67; t0 = t;
+      ctx.clearRect(0, 0, w, h);
+      // soft nebula
+      const grad = ctx.createRadialGradient(w * 0.5, h * 0.4, 0, w * 0.5, h * 0.4, Math.max(w, h) * 0.6);
+      grad.addColorStop(0, 'rgba(0,229,255,0.06)');
+      grad.addColorStop(0.6, 'rgba(124,111,239,0.03)');
+      grad.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+      for (const s of stars) {
+        s.x += s.vx * (0.4 + s.z * 1.4) * dt;
+        s.y += s.vy * (0.4 + s.z * 1.4) * dt;
+        s.tw += 0.04;
+        if (s.x < 0) s.x = w; if (s.x > w) s.x = 0;
+        if (s.y < 0) s.y = h; if (s.y > h) s.y = 0;
+        const a = 0.4 + 0.6 * (0.5 + 0.5 * Math.sin(s.tw)) * (0.4 + s.z * 0.6);
+        ctx.beginPath();
+        ctx.fillStyle = s.col;
+        ctx.globalAlpha = a;
+        ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+        ctx.fill();
+        if (s.z > 0.85) {
+          ctx.globalAlpha = a * 0.25;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r * 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      }
+      ctx.globalAlpha = 1;
+      raf = requestAnimationFrame(loop);
+    }
+    raf = requestAnimationFrame(loop);
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  return (
+    <canvas ref={ref}
+      style={{
+        position: 'fixed', inset: 0, width: '100%', height: '100%',
+        zIndex: 0, pointerEvents: 'none',
+      }} />
+  );
+}
+
+// =============================================================
+// MODE CARDS
+// =============================================================
+function ModeCard({ accent, title, label, desc, icon, onClick, depth = 1 }) {
+  const tilt = useCardTilt({ max: 10, lift: 16, baseX: 4 });
+  return (
+    <button
+      ref={tilt.ref}
+      {...tilt.handlers}
+      onClick={onClick}
+      style={{
+        position: 'relative',
+        background: `linear-gradient(165deg, ${PALETTE.surfaceHi} 0%, ${PALETTE.surface} 60%, #060c18 100%)`,
+        border: `1px solid ${PALETTE.border}`,
+        borderRadius: 14,
+        padding: 'clamp(20px, 3vw, 32px)',
+        textAlign: 'left',
+        color: PALETTE.text,
+        cursor: 'pointer',
+        boxShadow: panelShadow(tilt.hover, depth),
+        overflow: 'hidden',
+        animation: `sw-card-in 600ms cubic-bezier(.2,.8,.2,1) ${depth * 80}ms both`,
+        ...tilt.style,
+      }}>
+      {/* Cursor specular highlight */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', borderRadius: 14,
+        background: `radial-gradient(380px circle at ${tilt.mx}% ${tilt.my}%, ${accent}1F, transparent 60%)`,
+        opacity: tilt.hover ? 1 : 0,
+        transition: 'opacity 220ms ease',
+      }} />
+      {/* Left accent bar */}
+      <div style={{
+        position: 'absolute', left: 0, top: 12, bottom: 12, width: 3,
+        background: accent, boxShadow: `0 0 16px ${accent}, 0 0 28px ${accent}66`, borderRadius: 3,
+      }} />
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 22 }}>
+        <div style={{
+          width: 56, height: 56, borderRadius: 12,
+          display: 'grid', placeItems: 'center',
+          background: `linear-gradient(180deg, ${accent}1A, ${accent}05)`,
+          border: `1px solid ${accent}55`,
+          boxShadow: `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 18px ${accent}33`,
+          color: accent,
+        }}>{icon}</div>
+        <span style={{
+          fontFamily: 'Space Mono', fontSize: 10, letterSpacing: '0.22em',
+          color: PALETTE.textMute, textTransform: 'uppercase',
+        }}>{label}</span>
+      </div>
+
+      <h3 style={{
+        margin: 0,
+        fontFamily: 'Chakra Petch', fontWeight: 700,
+        fontSize: 'clamp(22px, 2.4vw, 30px)',
+        letterSpacing: '0.06em', textTransform: 'uppercase',
+        color: PALETTE.text,
+      }}>{title}</h3>
+      <p style={{
+        marginTop: 12, marginBottom: 0,
+        color: PALETTE.textDim,
+        fontSize: 14, lineHeight: 1.5,
+        maxWidth: 460,
+      }}>{desc}</p>
+
+      <div style={{
+        marginTop: 26,
+        display: 'flex', alignItems: 'center', gap: 10,
+        color: accent,
+        fontFamily: 'Chakra Petch', fontWeight: 600,
+        fontSize: 13, letterSpacing: '0.2em', textTransform: 'uppercase',
+      }}>
+        <span>Initialize</span>
+        <svg width="22" height="14" viewBox="0 0 24 14" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M2 7 H22" strokeLinecap="round" />
+          <path d="M16 2 L22 7 L16 12" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+    </button>
+  );
+}
+
+const StockIcon = (
+  <svg width="26" height="26" viewBox="0 0 32 32" fill="none" stroke="currentColor" strokeWidth="1.6">
+    <path d="M5 27 H28" strokeLinecap="round" opacity="0.4" />
+    <rect x="7"  y="14" width="3.5" height="9"  rx="0.6" fill="currentColor" opacity="0.85" />
+    <path d="M8.75 11 V14 M8.75 23 V25" strokeLinecap="round" />
+    <rect x="14" y="9"  width="3.5" height="13" rx="0.6" fill="currentColor" />
+    <path d="M15.75 6 V9 M15.75 22 V25" strokeLinecap="round" />
+    <rect x="21" y="16" width="3.5" height="6"  rx="0.6" fill="currentColor" opacity="0.6" />
+    <path d="M22.75 13 V16 M22.75 22 V25" strokeLinecap="round" />
+  </svg>
+);
+
+const PortfolioIcon = (
+  <svg width="26" height="26" viewBox="0 0 32 32" fill="none">
+    <circle cx="16" cy="16" r="11" stroke="currentColor" strokeWidth="1.4" opacity="0.35" />
+    <path d="M16 5 A11 11 0 0 1 26.4 12.5 L16 16 Z" fill="currentColor" />
+    <path d="M16 16 L26.4 12.5 A11 11 0 0 1 22.5 25.6 Z" fill="currentColor" opacity="0.6" />
+    <path d="M16 16 L22.5 25.6 A11 11 0 0 1 5 16 Z" fill="currentColor" opacity="0.32" />
+    <path d="M16 16 L5 16 A11 11 0 0 1 16 5 Z" fill="currentColor" opacity="0.18" />
+  </svg>
+);
+
+// =============================================================
+// INPUT PANEL — wraps the textarea forms
+// =============================================================
+function InputPanel({ accent, title, subtitle, onBack, onSubmit, children, submitLabel }) {
+  const tilt = useCardTilt({ max: 4, lift: 0, baseX: 2 });
+  return (
+    <div style={{
+      position: 'relative', width: '100%', maxWidth: 760,
+      animation: 'sw-spring-up 520ms cubic-bezier(0.175,0.885,0.32,1.275) both',
+    }}>
+      <div
+        ref={tilt.ref}
+        {...tilt.handlers}
+        style={{
+          position: 'relative',
+          background: `linear-gradient(165deg, ${PALETTE.surfaceHi} 0%, ${PALETTE.surface} 60%, #060c18 100%)`,
+          border: `1px solid ${PALETTE.border}`,
+          borderRadius: 14,
+          padding: 'clamp(20px, 3vw, 32px)',
+          boxShadow: panelShadow(true, 1.4),
+          ...tilt.style,
+        }}>
+        <div style={{
+          position: 'absolute', left: 0, top: 12, bottom: 12, width: 3,
+          background: accent, boxShadow: `0 0 18px ${accent}, 0 0 32px ${accent}55`,
+          borderRadius: 3,
+        }} />
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, gap: 12 }}>
+          <div>
+            <div style={{
+              fontFamily: 'Space Mono', fontSize: 10, letterSpacing: '0.22em',
+              color: PALETTE.textMute, textTransform: 'uppercase',
+            }}>{subtitle}</div>
+            <h3 style={{
+              margin: '4px 0 0',
+              fontFamily: 'Chakra Petch', fontWeight: 700,
+              fontSize: 'clamp(20px, 2.2vw, 26px)',
+              letterSpacing: '0.08em', textTransform: 'uppercase',
+            }}>{title}</h3>
+          </div>
+          <button onClick={onBack} aria-label="Back to mode select"
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 8,
+              background: 'transparent',
+              border: `1px solid ${PALETTE.border}`,
+              color: PALETTE.textDim,
+              padding: '8px 12px', borderRadius: 6, cursor: 'pointer',
+              fontFamily: 'Chakra Petch', fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase',
+            }}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2">
+              <path d="M15 6 L9 12 L15 18" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back
+          </button>
+        </div>
+
+        {children}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 22 }}>
+          <button onClick={onSubmit}
+            style={{
+              display: 'inline-flex', alignItems: 'center', gap: 12,
+              padding: '12px 20px',
+              background: `linear-gradient(180deg, ${accent}33, ${accent}10)`,
+              border: `1px solid ${accent}AA`,
+              color: accent,
+              fontFamily: 'Chakra Petch', fontWeight: 700,
+              fontSize: 13, letterSpacing: '0.22em', textTransform: 'uppercase',
+              borderRadius: 8, cursor: 'pointer',
+              boxShadow: `inset 0 1px 0 rgba(255,255,255,0.12), inset 0 -1px 0 rgba(0,0,0,0.5), 0 0 22px ${accent}66, 0 8px 22px rgba(0,0,0,0.5)`,
+            }}>
+            <span>{submitLabel}</span>
+            <svg width="22" height="12" viewBox="0 0 24 14" fill="none" stroke="currentColor" strokeWidth="2.4">
+              <path d="M2 7 H22" strokeLinecap="round" />
+              <path d="M16 2 L22 7 L16 12" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FieldLabel({ children, hint }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 8 }}>
+      <label style={{
+        fontFamily: 'Chakra Petch', fontWeight: 600,
+        fontSize: 12, letterSpacing: '0.22em', textTransform: 'uppercase',
+        color: PALETTE.textDim,
+      }}>{children}</label>
+      {hint ? <span style={{
+        fontFamily: 'Space Mono', fontSize: 10, color: PALETTE.textMute, letterSpacing: '0.1em',
+      }}>{hint}</span> : null}
+    </div>
+  );
+}
+
+const inputBaseStyle = {
+  width: '100%',
+  background: '#040810',
+  border: `1px solid ${PALETTE.border}`,
+  color: PALETTE.text,
+  padding: '12px 14px',
+  borderRadius: 8,
+  fontFamily: 'Space Mono, monospace',
+  fontSize: 13,
+  lineHeight: 1.55,
+  outline: 'none',
+  boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.6)',
+  transition: 'border-color 180ms, box-shadow 180ms',
+};
+
+// =============================================================
+// ENTRY SCREEN ROOT
+// =============================================================
+function EntryScreen({ onSelectStocks, onSelectPortfolio }) {
+  const [panel, setPanel] = _eUseState(null); // 'stocks' | 'portfolio' | null
+
+  // form state
+  const [tickers, setTickers] = _eUseState('ALB\nFIX 2025-01-01\nGLW\nLRCX 2025-03-01');
+  const [baseDate, setBaseDate] = _eUseState('2024-09-01');
+  const [holdings, setHoldings] = _eUseState('ALB 59.85 167.86\nFIX 8.90 1165.63\nNVDA 124 89.42\nLRCX 142.5 78.10');
+  const [realizedPnl, setRealizedPnl] = _eUseState(18420.55);
+
+  const handleStocksSubmit = () => onSelectStocks({ tickers, baseDate });
+  const handlePortfolioSubmit = () => onSelectPortfolio({ holdings, realizedPnl });
+
+  return (
+    <div style={{
+      position: 'relative',
+      minHeight: '100vh',
+      width: '100%',
+      overflow: 'hidden',
+      background: 'radial-gradient(ellipse at 50% 30%, #0a1626 0%, #05080f 60%, #000 100%)',
+    }}>
+      <Starfield />
+      <PerspectiveGrid />
+
+      <div style={{
+        position: 'relative',
+        zIndex: 5,
+        minHeight: '100vh',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 'clamp(36px, 6vw, 80px) clamp(20px, 4vw, 60px) clamp(48px, 6vw, 80px)',
+      }}>
+        {/* Top status bar */}
+        <div style={{
+          position: 'absolute', top: 18, left: 0, right: 0,
+          display: 'flex', justifyContent: 'space-between',
+          padding: '0 clamp(18px, 4vw, 36px)',
+          fontFamily: 'Space Mono', fontSize: 10, color: PALETTE.textMute, letterSpacing: '0.22em', textTransform: 'uppercase',
+        }}>
+          <span>SW · TERMINAL // v3.4.1</span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <PulsingDot color={PALETTE.bullish} size={6} />
+            FEED · LIVE
+          </span>
+        </div>
+
+        {/* Title block */}
+        <div style={{ position: 'relative', textAlign: 'center', marginBottom: 14 }}>
+          <div style={{
+            position: 'absolute', inset: 0,
+            filter: 'blur(28px)', opacity: 0.55,
+            pointerEvents: 'none',
+          }}>
+            <h1 style={titleStyle}>SIGNAL WATCH</h1>
+          </div>
+          <h1 style={{ ...titleStyle, animation: 'sw-glow-text 5s ease-in-out infinite' }}>SIGNAL WATCH</h1>
+        </div>
+        <div style={{
+          fontFamily: 'Space Mono', fontSize: 'clamp(11px, 1.2vw, 13px)',
+          letterSpacing: '0.42em', color: PALETTE.textDim,
+          textTransform: 'uppercase', marginBottom: 'clamp(28px, 4vw, 50px)',
+        }}>
+          Quantitative · Momentum · Intelligence
+        </div>
+
+        {!panel ? (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(290px, 1fr))',
+            gap: 'clamp(18px, 2.4vw, 26px)',
+            width: '100%', maxWidth: 980,
+          }}>
+            <ModeCard
+              accent={PALETTE.bullish}
+              title="Stock Signals"
+              label="Single Stock Analysis"
+              icon={StockIcon}
+              desc="ATR-based BUY MORE and SQUARE OFF signals for individual stocks. Track entry, momentum, and volatility regime per ticker."
+              depth={1}
+              onClick={() => setPanel('stocks')} />
+            <ModeCard
+              accent={PALETTE.neutral}
+              title="Portfolio"
+              label="Portfolio Dashboard"
+              icon={PortfolioIcon}
+              desc="Portfolio-level ATR signals for momentum strategy. Aggregate holdings, returns, drawdown, and trend strength in one panel."
+              depth={2}
+              onClick={() => setPanel('portfolio')} />
+          </div>
+        ) : panel === 'stocks' ? (
+          <InputPanel
+            accent={PALETTE.bullish}
+            title="Stock Signals"
+            subtitle="Single Stock Analysis"
+            submitLabel="Analyse"
+            onBack={() => setPanel(null)}
+            onSubmit={handleStocksSubmit}>
+            <FieldLabel hint="One per line · TICKER [YYYY-MM-DD]">Tickers</FieldLabel>
+            <textarea
+              value={tickers}
+              onChange={(e) => setTickers(e.target.value)}
+              rows={6}
+              placeholder={'ALB\nFIX 2025-01-01\nGLW\nLRCX 2025-03-01'}
+              style={inputBaseStyle}
+              onFocus={(e) => { e.target.style.borderColor = PALETTE.bullish; e.target.style.boxShadow = `inset 0 2px 6px rgba(0,0,0,0.6), 0 0 14px ${PALETTE.bullish}33`; }}
+              onBlur={(e) => { e.target.style.borderColor = PALETTE.border; e.target.style.boxShadow = 'inset 0 2px 6px rgba(0,0,0,0.6)'; }} />
+
+            <div style={{ height: 16 }} />
+            <FieldLabel hint="Used when no per-row date">Global Base Date</FieldLabel>
+            <input type="date" value={baseDate} onChange={(e) => setBaseDate(e.target.value)}
+              style={{ ...inputBaseStyle, maxWidth: 240 }} />
+          </InputPanel>
+        ) : (
+          <InputPanel
+            accent={PALETTE.neutral}
+            title="Portfolio"
+            subtitle="Portfolio Dashboard"
+            submitLabel="Load Portfolio"
+            onBack={() => setPanel(null)}
+            onSubmit={handlePortfolioSubmit}>
+            <FieldLabel hint="One per line · TICKER QTY ENTRY_PRICE">Holdings (max 20)</FieldLabel>
+            <textarea
+              value={holdings}
+              onChange={(e) => setHoldings(e.target.value)}
+              rows={8}
+              placeholder={'ALB 59.85 167.86\nFIX 8.90 1165.63'}
+              style={inputBaseStyle}
+              onFocus={(e) => { e.target.style.borderColor = PALETTE.neutral; e.target.style.boxShadow = `inset 0 2px 6px rgba(0,0,0,0.6), 0 0 14px ${PALETTE.neutral}44`; }}
+              onBlur={(e) => { e.target.style.borderColor = PALETTE.border; e.target.style.boxShadow = 'inset 0 2px 6px rgba(0,0,0,0.6)'; }} />
+
+            <div style={{ height: 16 }} />
+            <FieldLabel hint="USD">Realised PnL</FieldLabel>
+            <input type="number" value={realizedPnl} onChange={(e) => setRealizedPnl(+e.target.value)}
+              style={{ ...inputBaseStyle, maxWidth: 240 }} />
+          </InputPanel>
+        )}
+      </div>
+    </div>
+  );
+}
+
+const titleStyle = {
+  margin: 0,
+  fontFamily: 'Chakra Petch, sans-serif',
+  fontWeight: 700,
+  fontSize: 'clamp(48px, 9vw, 132px)',
+  letterSpacing: '0.04em',
+  lineHeight: 0.95,
+  textTransform: 'uppercase',
+  background: 'linear-gradient(95deg, #ffffff 0%, #00e5ff 35%, #10d97e 65%, #f59e0b 100%)',
+  WebkitBackgroundClip: 'text',
+  WebkitTextFillColor: 'transparent',
+  backgroundClip: 'text',
+  color: 'transparent',
+};
+
+Object.assign(window, { EntryScreen });
+
+
+//============================================
+
+// stock-dashboard.jsx — Stock signals grid + detail drawer
+const { useState: _sUseState, useEffect: _sUseEffect, useMemo: _sUseMemo, useRef: _sUseRef } = React;
+const RC = window.Recharts;
+
+// =============================================================
+// SIGNAL PILL BADGE — header counts
+// =============================================================
+function HeaderCountPill({ label, count, color, tickers }) {
+  const [hover, setHover] = _sUseState(false);
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      style={{ position: 'relative' }}>
+      <div style={{
+        '--c': color, '--g': color + '4D', '--g2': color + 'B3',
+        display: 'inline-flex', alignItems: 'center', gap: 8,
+        padding: '6px 14px',
+        background: `linear-gradient(180deg, ${color}24, ${color}0A)`,
+        border: `1px solid ${color}55`,
+        borderRadius: 999,
+        boxShadow: `inset 0 1px 0 rgba(255,255,255,0.14), inset 0 -1px 0 rgba(0,0,0,0.5), 0 0 18px ${color}44`,
+        cursor: 'default', animation: 'sw-breathe 3.2s ease-in-out infinite',
+      }}>
+        <PulsingDot color={color} size={6} />
+        <span style={{
+          fontFamily: 'Chakra Petch', fontWeight: 700, fontSize: 11,
+          letterSpacing: '0.18em', color, textTransform: 'uppercase',
+        }}>{label}</span>
+        <span style={{
+          fontFamily: 'Space Mono', fontSize: 13, color: PALETTE.text, fontWeight: 700,
+          paddingLeft: 8, borderLeft: `1px solid ${color}33`,
+        }}>{count}</span>
+      </div>
+      {hover && tickers.length > 0 ? (
+        <div style={{
+          position: 'absolute', top: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)',
+          background: 'rgba(4,8,16,0.96)',
+          border: `1px solid ${color}55`,
+          borderRadius: 8, padding: '8px 12px',
+          boxShadow: `0 12px 28px rgba(0,0,0,0.6), 0 0 14px ${color}33`,
+          fontFamily: 'Space Mono', fontSize: 11, color: PALETTE.text,
+          letterSpacing: '0.12em', whiteSpace: 'nowrap', zIndex: 50,
+        }}>{tickers.join(' · ')}</div>
+      ) : null}
+    </div>
+  );
+}
+
+// =============================================================
+// COUNT-UP NUMBER
+// =============================================================
+function CountNumber({ value, decimals = 2, suffix = '', prefix = '', color, style }) {
+  const v = useCountUp(value, 1100);
+  return (
+    <span style={{ fontFamily: 'Space Mono, monospace', fontVariantNumeric: 'tabular-nums', color, ...style }}>
+      {prefix}{v.toFixed(decimals)}{suffix}
+    </span>
+  );
+}
+
+// =============================================================
+// ATR GAUGE BAR
+// =============================================================
+function AtrGauge({ atr }) {
+  // Build 0..max scale from p25/p75 with padding
+  const max = Math.max(atr.current, atr.p75) * 1.35;
+  const min = 0;
+  const pct = (v) => `${Math.max(0, Math.min(100, ((v - min) / (max - min)) * 100))}%`;
+  const inZone = atr.current >= atr.p25 && atr.current <= atr.p75;
+  const needleColor = inZone ? PALETTE.bullish : PALETTE.bearish;
+
+  return (
+    <div style={{ width: '100%' }}>
+      <div style={{
+        position: 'relative', height: 22,
+        background: '#040810',
+        borderRadius: 6,
+        border: `1px solid ${PALETTE.border}`,
+        boxShadow: 'inset 0 2px 6px rgba(0,0,0,0.7), inset 0 -1px 0 rgba(255,255,255,0.04)',
+        overflow: 'hidden',
+      }}>
+        {/* danger zones */}
+        <div style={{
+          position: 'absolute', left: 0, top: 0, bottom: 0, width: pct(atr.p25),
+          background: `linear-gradient(90deg, ${PALETTE.bearish}33, ${PALETTE.bearish}10)`,
+        }} />
+        <div style={{
+          position: 'absolute', right: 0, top: 0, bottom: 0,
+          left: pct(atr.p75),
+          background: `linear-gradient(270deg, ${PALETTE.bearish}33, ${PALETTE.bearish}10)`,
+        }} />
+        {/* green zone */}
+        <div style={{
+          position: 'absolute', top: 0, bottom: 0,
+          left: pct(atr.p25), width: `calc(${pct(atr.p75)} - ${pct(atr.p25)})`,
+          background: `linear-gradient(90deg, ${PALETTE.bullish}40, ${PALETTE.bullish}25)`,
+          boxShadow: `inset 0 0 12px ${PALETTE.bullish}33`,
+        }} />
+        {/* p25/p75 markers */}
+        {[atr.p25, atr.p75].map((v, i) => (
+          <div key={i} style={{
+            position: 'absolute', top: -1, bottom: -1,
+            left: pct(v), width: 1, background: PALETTE.text, opacity: 0.55,
+          }} />
+        ))}
+        {/* Needle */}
+        <div style={{
+          position: 'absolute', top: -3, bottom: -3,
+          left: pct(atr.current),
+          width: 3, marginLeft: -1.5,
+          background: needleColor,
+          boxShadow: `0 0 10px ${needleColor}, 0 0 20px ${needleColor}88`,
+          borderRadius: 1,
+          transition: 'left 1.1s cubic-bezier(.2,.8,.2,1)',
+        }} />
+      </div>
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr 1fr',
+        marginTop: 6,
+        fontFamily: 'Space Mono', fontSize: 9.5, color: PALETTE.textMute,
+        letterSpacing: '0.14em', textTransform: 'uppercase',
+      }}>
+        <span>P25 {atr.p25.toFixed(2)}</span>
+        <span style={{ textAlign: 'center', color: needleColor }}>ATR {atr.current.toFixed(2)}</span>
+        <span style={{ textAlign: 'right' }}>P75 {atr.p75.toFixed(2)}</span>
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// MINI SPARKLINE
+// =============================================================
+function AtrSparkline({ data }) {
+  const series = data.map((v, i) => ({ i, v }));
+  return (
+    <div style={{ width: '100%', height: 44 }}>
+      <RC.ResponsiveContainer>
+        <RC.LineChart data={series} margin={{ top: 4, right: 4, left: 4, bottom: 0 }}>
+          <RC.Line
+            dataKey="v"
+            type="monotone"
+            stroke={PALETTE.amber}
+            strokeWidth={1.6}
+            dot={false}
+            isAnimationActive={true}
+            animationDuration={1100}
+            animationEasing="ease-out" />
+        </RC.LineChart>
+      </RC.ResponsiveContainer>
+    </div>
+  );
+}
+
+// =============================================================
+// STOCK CARD
+// =============================================================
+function StockCard({ s, idx, onOpen }) {
+  const meta = SIGNAL_META[s.signal];
+  const tilt = useCardTilt({ max: 8, lift: 14, baseX: 4 });
+
+  const pos = s.returnPct >= 0;
+  const retColor = s.signal === 'SQUARE OFF' ? PALETTE.bearish : pos ? PALETTE.bullish : PALETTE.bearish;
+
+  return (
+    <div
+      ref={tilt.ref}
+      {...tilt.handlers}
+      onClick={() => onOpen(s)}
+      role="button"
+      tabIndex={0}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') onOpen(s); }}
+      style={{
+        position: 'relative',
+        background: `linear-gradient(165deg, ${PALETTE.surfaceHi} 0%, ${PALETTE.surface} 60%, #060c18 100%)`,
+        border: `1px solid ${PALETTE.border}`,
+        borderRadius: 12,
+        padding: 18,
+        cursor: 'pointer',
+        boxShadow: panelShadow(tilt.hover, 1),
+        overflow: 'hidden',
+        animation: `sw-card-in 600ms cubic-bezier(.2,.8,.2,1) ${idx * 50}ms both`,
+        ...tilt.style,
+      }}>
+      {/* Cursor specular */}
+      <div style={{
+        position: 'absolute', inset: 0, pointerEvents: 'none', borderRadius: 12,
+        background: `radial-gradient(360px circle at ${tilt.mx}% ${tilt.my}%, ${meta.color}1F, transparent 60%)`,
+        opacity: tilt.hover ? 1 : 0, transition: 'opacity 200ms ease',
+      }} />
+      {/* Left accent bar */}
+      <div style={{
+        position: 'absolute', left: 0, top: 10, bottom: 10, width: 3,
+        background: meta.color, boxShadow: `0 0 14px ${meta.color}, 0 0 24px ${meta.color}66`,
+        borderRadius: 3,
+      }} />
+
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 10 }}>
+        <div>
+          <div style={{
+            fontFamily: 'Chakra Petch', fontWeight: 700,
+            fontSize: 'clamp(22px, 2.2vw, 26px)',
+            letterSpacing: '0.06em', color: PALETTE.text, lineHeight: 1,
+          }}>{s.ticker}</div>
+          <div style={{
+            marginTop: 4,
+            fontFamily: 'Space Mono', fontSize: 10, color: PALETTE.textMute,
+            letterSpacing: '0.14em', textTransform: 'uppercase',
+          }}>
+            {fmtDate(s.entryDate)} · {s.weeksHeld}W HELD
+          </div>
+        </div>
+        <SignalBadge signal={s.signal} size="sm" />
+      </div>
+
+      {/* Big return */}
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginTop: 18 }}>
+        <CountNumber
+          value={s.returnPct}
+          decimals={2}
+          suffix="%"
+          prefix={pos ? '+' : ''}
+          color={retColor}
+          style={{
+            fontWeight: 700, fontSize: 'clamp(34px, 4.4vw, 46px)',
+            letterSpacing: '-0.02em',
+            textShadow: `0 0 22px ${retColor}55`,
+          }} />
+        <span style={{
+          fontFamily: 'Space Mono', fontSize: 11, color: PALETTE.textMute,
+          letterSpacing: '0.18em', textTransform: 'uppercase',
+        }}>RET</span>
+      </div>
+
+      {/* Week deltas */}
+      <div style={{
+        display: 'flex', gap: 18, marginTop: 6,
+        fontFamily: 'Space Mono', fontSize: 11,
+      }}>
+        <div>
+          <span style={{ color: PALETTE.textMute, letterSpacing: '0.14em' }}>1W </span>
+          <span style={{ color: s.weekDelta >= 0 ? PALETTE.bullish : PALETTE.bearish }}>
+            {fmtPct(s.weekDelta)}
+          </span>
+        </div>
+        <div>
+          <span style={{ color: PALETTE.textMute, letterSpacing: '0.14em' }}>PRV </span>
+          <span style={{ color: s.prevWeekDelta >= 0 ? PALETTE.bullish : PALETTE.bearish }}>
+            {fmtPct(s.prevWeekDelta)}
+          </span>
+        </div>
+      </div>
+
+      {/* ATR gauge */}
+      <div style={{ marginTop: 18 }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          fontFamily: 'Chakra Petch', fontSize: 10,
+          color: PALETTE.textDim, letterSpacing: '0.22em',
+          textTransform: 'uppercase', marginBottom: 6,
+        }}>
+          <span>ATR Gauge</span>
+          <span style={{ color: PALETTE.amber }}>{s.atr.current.toFixed(2)}</span>
+        </div>
+        <AtrGauge atr={s.atr} />
+      </div>
+
+      {/* Sparkline */}
+      <div style={{ marginTop: 14 }}>
+        <div style={{
+          display: 'flex', justifyContent: 'space-between',
+          fontFamily: 'Chakra Petch', fontSize: 10,
+          color: PALETTE.textDim, letterSpacing: '0.22em',
+          textTransform: 'uppercase', marginBottom: 2,
+        }}>
+          <span>13W ATR</span>
+          <span style={{ color: PALETTE.textMute }}>SLP {s.trend.angle.toFixed(1)}°</span>
+        </div>
+        <AtrSparkline data={s.atr.history} />
+      </div>
+    </div>
+  );
+}
+
+// =============================================================
+// SKELETON CARD
+// =============================================================
+function SkeletonCard({ idx }) {
+  return (
+    <div style={{
+      background: PALETTE.surface,
+      border: `1px solid ${PALETTE.border}`,
+      borderRadius: 12, padding: 18,
+      boxShadow: panelShadow(false, 1),
+      animation: `sw-card-in 600ms cubic-bezier(.2,.8,.2,1) ${idx * 50}ms both`,
+    }}>
+      <div className="sw-shimmer" style={{ width: 80, height: 22, borderRadius: 4 }} />
+      <div className="sw-shimmer" style={{ width: 130, height: 12, borderRadius: 4, marginTop: 10 }} />
+      <div className="sw-shimmer" style={{ width: 180, height: 38, borderRadius: 4, marginTop: 22 }} />
+      <div className="sw-shimmer" style={{ width: '100%', height: 22, borderRadius: 4, marginTop: 22 }} />
+      <div className="sw-shimmer" style={{ width: '100%', height: 44, borderRadius: 4, marginTop: 16 }} />
+    </div>
+  );
+}
+
+// =============================================================
+// DETAIL DRAWER
+// =============================================================
+function StockDrawer({ stock, onClose }) {
+  const isMobile = useMediaQuery('(max-width: 720px)');
+  const [mounted, setMounted] = _sUseState(false);
+  _sUseEffect(() => { const id = setTimeout(() => setMounted(true), 10); return () => clearTimeout(id); }, []);
+
+  // Close on ESC
+  _sUseEffect(() => {
+    const fn = (e) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', fn);
+    return () => window.removeEventListener('keydown', fn);
+  }, [onClose]);
+
+  if (!stock) return null;
+  const meta = SIGNAL_META[stock.signal];
+
+  // Build chart data
+  const retSeries = stock.returnHistory.map((v, i) => {
+    const target = (stock.trend.slope * i) + (stock.returnHistory[0] || 0);
+    return { i, week: `W${i + 1}`, ret: v, fit: +target.toFixed(2) };
+  });
+  const atrSeries = stock.atr.history.map((v, i) => ({
+    i, week: `W${i + 1}`, atr: v, p25: stock.atr.p25, p75: stock.atr.p75,
+  }));
+
+  const drawerWidth = isMobile ? '100%' : 'min(560px, 92vw)';
+  const drawerHeight = isMobile ? '90vh' : '100vh';
+
+  return (
+    <>
+      <div
+        onClick={onClose}
+        style={{
+          position: 'fixed', inset: 0, zIndex: 90,
+          background: 'rgba(2,4,8,0.66)',
+          backdropFilter: 'blur(4px)',
+          WebkitBackdropFilter: 'blur(4px)',
+          opacity: mounted ? 1 : 0,
+          transition: 'opacity 220ms ease',
+        }} />
+      <aside
+        role="dialog"
+        aria-label={`${stock.ticker} detail`}
+        style={{
+          position: 'fixed',
+          ...(isMobile
+            ? { left: 0, right: 0, bottom: 0, height: drawerHeight, borderTop: `1px solid ${PALETTE.border}`, borderTopLeftRadius: 16, borderTopRightRadius: 16 }
+            : { top: 0, right: 0, height: drawerHeight, width: drawerWidth, borderLeft: `1px solid ${PALETTE.border}` }),
+          zIndex: 100,
+          background: `linear-gradient(180deg, ${PALETTE.surfaceHi} 0%, ${PALETTE.bg} 100%)`,
+          color: PALETTE.text,
+          boxShadow: '0 -20px 80px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05)',
+          animation: `${isMobile ? 'sw-drawer-bottom' : 'sw-drawer-right'} 360ms cubic-bezier(.2,.8,.2,1) both`,
+          overflow: 'hidden',
+          display: 'flex', flexDirection: 'column',
+        }}>
+        {/* Drawer Header */}
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '18px 22px',
+          borderBottom: `1px solid ${PALETTE.border}`,
+          background: 'linear-gradient(180deg, rgba(255,255,255,0.04), transparent)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: 14 }}>
+            <span style={{
+              fontFamily: 'Chakra Petch', fontWeight: 700,
+              fontSize: 28, letterSpacing: '0.06em',
+              color: PALETTE.text,
+            }}>{stock.ticker}</span>
+            <span style={{
+              fontFamily: 'Space Mono', fontSize: 11,
+              color: PALETTE.textMute, letterSpacing: '0.18em', textTransform: 'uppercase',
+            }}>{stock.name}</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <SignalBadge signal={stock.signal} />
+            <button onClick={onClose} aria-label="Close"
+              style={{
+                width: 34, height: 34, borderRadius: 6,
+                background: 'transparent', color: PALETTE.textDim,
+                border: `1px solid ${PALETTE.border}`, cursor: 'pointer',
+                display: 'grid', placeItems: 'center',
+              }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4">
+                <path d="M5 5 L19 19 M19 5 L5 19" strokeLinecap="round" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <div style={{ overflow: 'auto', padding: 22, flex: 1 }}>
+          {/* Hero stat row */}
+          <div style={{
+            display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 1,
+            background: PALETTE.border, border: `1px solid ${PALETTE.border}`,
+            borderRadius: 10, overflow: 'hidden', marginBottom: 18,
+          }}>
+            <div style={{ background: '#040810', padding: '14px 18px' }}>
+              <div style={{ fontFamily: 'Chakra Petch', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: PALETTE.textMute }}>Live Price</div>
+              <div style={{ marginTop: 6, fontFamily: 'Space Mono', fontWeight: 700, fontSize: 22, color: PALETTE.text }}>{fmtUsd(stock.livePrice)}</div>
+              <div style={{ marginTop: 4, fontFamily: 'Space Mono', fontSize: 11, color: PALETTE.textMute }}>Entry {fmtUsd(stock.entryPrice)} · {stock.weeksHeld}W</div>
+            </div>
+            <div style={{ background: '#040810', padding: '14px 18px' }}>
+              <div style={{ fontFamily: 'Chakra Petch', fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: PALETTE.textMute }}>Total Return</div>
+              <div style={{ marginTop: 6, fontFamily: 'Space Mono', fontWeight: 700, fontSize: 22, color: stock.returnPct >= 0 ? PALETTE.bullish : PALETTE.bearish, textShadow: `0 0 18px ${stock.returnPct >= 0 ? PALETTE.bullish : PALETTE.bearish}55` }}>{fmtPct(stock.returnPct)}</div>
+              <div style={{ marginTop: 4, fontFamily: 'Space Mono', fontSize: 11, color: stock.weekDelta >= 0 ? PALETTE.bullish : PALETTE.bearish }}>{fmtPct(stock.weekDelta)} this week {stock.weekDelta >= 0 ? '↑' : '↓'}</div>
+            </div>
+          </div>
+
+          {/* Metric list */}
+          <SectionLabel>Metrics</SectionLabel>
+          <div style={{
+            background: '#040810',
+            border: `1px solid ${PALETTE.border}`,
+            borderRadius: 10,
+            overflow: 'hidden',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04)',
+          }}>
+            {(() => {
+              const atrPos = stock.atr.current > stock.atr.p75 ? { label: 'ABOVE P75', color: PALETTE.bearish } :
+                stock.atr.current < stock.atr.p25 ? { label: 'BELOW P25', color: PALETTE.amber } :
+                { label: 'IN HEALTHY ZONE', color: PALETTE.bullish };
+              const rows = [
+                ['Return since entry', fmtPct(stock.returnPct), stock.returnPct >= 0 ? PALETTE.bullish : PALETTE.bearish],
+                ['This week',          `${fmtPct(stock.weekDelta)} ${stock.weekDelta >= 0 ? '\u2191' : '\u2193'}`, stock.weekDelta >= 0 ? PALETTE.bullish : PALETTE.bearish],
+                ['ATR 1W',             stock.atr.current.toFixed(2), PALETTE.text],
+                ['p25 (calm)',         stock.atr.p25.toFixed(2), PALETTE.text],
+                ['p75 (elevated)',     stock.atr.p75.toFixed(2), PALETTE.text],
+                ['ATR position',       atrPos.label, atrPos.color],
+                ['Slope',              `${stock.trend.slope >= 0 ? '+' : ''}${stock.trend.slope.toFixed(2)}/wk`, PALETTE.text],
+                ['Angle',              `${stock.trend.angle >= 0 ? '+' : ''}${stock.trend.angle.toFixed(1)}°`, PALETTE.text],
+                ['R²',                 stock.trend.r2.toFixed(2), PALETTE.text],
+              ];
+              return rows.map(([k, v, c], i) => (
+                <div key={k} style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '12px 18px',
+                  borderTop: i === 0 ? 'none' : `1px solid ${PALETTE.border}66`,
+                }}>
+                  <span style={{ fontFamily: 'Chakra Petch', fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase', color: PALETTE.textDim }}>{k}</span>
+                  <span style={{ fontFamily: 'Space Mono', fontWeight: 700, fontSize: 14, color: c, fontVariantNumeric: 'tabular-nums' }}>{v}</span>
+                </div>
+              ));
+            })()}
+          </div>
+
+          {/* Return history */}
+          <SectionLabel style={{ marginTop: 22 }}>Return History</SectionLabel>
+          <ChartFrame height={200}>
+            <span style={{ position: 'absolute', top: 10, right: 14, zIndex: 2 }}>
+              <span style={{
+                display: 'inline-flex', gap: 8,
+                background: 'rgba(4,8,16,0.7)',
+                border: `1px solid ${PALETTE.amber}55`,
+                padding: '4px 10px', borderRadius: 999,
+                fontFamily: 'Space Mono', fontSize: 10, color: PALETTE.amber,
+                letterSpacing: '0.16em',
+              }}>{stock.trend.angle.toFixed(1)}° · R² {stock.trend.r2.toFixed(2)}</span>
+            </span>
+            <RC.ResponsiveContainer>
+              <RC.AreaChart data={retSeries} margin={{ top: 12, right: 14, left: -10, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="retfill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%"   stopColor={PALETTE.bullish} stopOpacity={0.45} />
+                    <stop offset="100%" stopColor={PALETTE.bullish} stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <RC.CartesianGrid stroke={PALETTE.border} strokeDasharray="2 5" vertical={false} />
+                <RC.XAxis dataKey="week" tick={{ fill: PALETTE.textMute, fontSize: 10, fontFamily: 'Space Mono' }} interval={Math.max(0, Math.floor(retSeries.length / 6))} stroke={PALETTE.border} />
+                <RC.YAxis tick={{ fill: PALETTE.textMute, fontSize: 10, fontFamily: 'Space Mono' }} stroke={PALETTE.border} />
+                <RC.Tooltip content={<TermTooltip suffix="%" />} />
+                <RC.Area dataKey="ret" type="monotone" stroke={PALETTE.bullish} fill="url(#retfill)" strokeWidth={2} animationDuration={1200} />
+                <RC.Line dataKey="fit" type="linear" stroke={PALETTE.amber} strokeDasharray="5 5" strokeWidth={1.5} dot={false} animationDuration={1400} />
+              </RC.AreaChart>
+            </RC.ResponsiveContainer>
+          </ChartFrame>
+
+          {/* ATR history */}
+          <SectionLabel style={{ marginTop: 22 }}>ATR History (13 weeks · signal uses last 4w band)</SectionLabel>
+          <ChartFrame height={180}>
+            <RC.ResponsiveContainer>
+              <RC.LineChart data={atrSeries} margin={{ top: 12, right: 50, left: -10, bottom: 0 }}>
+                <RC.CartesianGrid stroke={PALETTE.border} strokeDasharray="2 5" vertical={false} />
+                <RC.XAxis dataKey="week" tick={{ fill: PALETTE.textMute, fontSize: 10, fontFamily: 'Space Mono' }} stroke={PALETTE.border} />
+                <RC.YAxis tick={{ fill: PALETTE.textMute, fontSize: 10, fontFamily: 'Space Mono' }} stroke={PALETTE.border} />
+                <RC.Tooltip content={<TermTooltip />} />
+                <RC.ReferenceLine y={stock.atr.p25} stroke={PALETTE.bullish} strokeDasharray="5 5"
+                  label={{ value: `P25 ${stock.atr.p25.toFixed(2)}`, position: 'right', fill: PALETTE.bullish, fontSize: 10, fontFamily: 'Space Mono' }} />
+                <RC.ReferenceLine y={stock.atr.p75} stroke={PALETTE.bearish} strokeDasharray="5 5"
+                  label={{ value: `P75 ${stock.atr.p75.toFixed(2)}`, position: 'right', fill: PALETTE.bearish, fontSize: 10, fontFamily: 'Space Mono' }} />
+                <RC.Line dataKey="atr" type="monotone" stroke={PALETTE.amber} strokeWidth={2} dot={false} animationDuration={1200}
+                  label={({ x, y, value, index }) => index === atrSeries.length - 1 ? (
+                    <text x={x + 6} y={y + 4} fill={PALETTE.amber} fontSize="10" fontFamily="Space Mono">{value.toFixed(2)}</text>
+                  ) : null} />
+              </RC.LineChart>
+            </RC.ResponsiveContainer>
+          </ChartFrame>
+
+          {/* Why this signal */}
+          <SectionLabel style={{ marginTop: 22 }}>Why This Signal</SectionLabel>
+          <div style={{
+            background: '#040810',
+            border: `1px solid ${PALETTE.border}`,
+            borderLeft: `3px solid ${meta.color}`,
+            borderRadius: 8,
+            padding: 16,
+            fontSize: 13,
+            lineHeight: 1.6,
+            color: PALETTE.textDim,
+          }}>
+            {explainSignal(stock)}
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+function explainSignal(s) {
+  const inZone = s.atr.current >= s.atr.p25 && s.atr.current <= s.atr.p75;
+  if (s.signal === 'BUY MORE') {
+    return `Trend strength is high (R² ${s.trend.r2.toFixed(2)}, slope angle ${s.trend.angle.toFixed(1)}°) and ATR ${s.atr.current.toFixed(2)} sits ${inZone ? 'inside' : s.atr.current < s.atr.p25 ? 'below' : 'above'} the [${s.atr.p25.toFixed(2)} – ${s.atr.p75.toFixed(2)}] healthy band. Momentum continues; size up the position.`;
+  }
+  if (s.signal === 'SQUARE OFF') {
+    return `Recent week deltas ${fmtPct(s.weekDelta)} / ${fmtPct(s.prevWeekDelta)} indicate momentum exhaustion. ATR ${s.atr.current.toFixed(2)} is ${s.atr.current > s.atr.p75 ? 'above the P75 ceiling — volatility regime expanding' : 'compressing below the P25 floor — trend losing energy'}. Take profit / cut.`;
+  }
+  return `Slope angle ${s.trend.angle.toFixed(1)}° with R² ${s.trend.r2.toFixed(2)} indicates a low-conviction trend. ATR ${s.atr.current.toFixed(2)} is ${inZone ? 'within' : 'outside'} the healthy band. Hold and re-evaluate next week.`;
+}
+
+function SectionLabel({ children, style }) {
+  return (
+    <div style={{
+      fontFamily: 'Chakra Petch', fontWeight: 600,
+      fontSize: 11, letterSpacing: '0.26em', textTransform: 'uppercase',
+      color: PALETTE.textDim, marginBottom: 10,
+      ...style,
+    }}>{children}</div>
+  );
+}
+
+function Metric({ label, value, color = PALETTE.text }) {
+  return (
+    <div style={{
+      background: PALETTE.surface, padding: '12px 14px',
+    }}>
+      <div style={{
+        fontFamily: 'Chakra Petch', fontSize: 9.5, letterSpacing: '0.22em',
+        textTransform: 'uppercase', color: PALETTE.textMute,
+      }}>{label}</div>
+      <div style={{
+        marginTop: 4,
+        fontFamily: 'Space Mono', fontWeight: 700, fontSize: 16, color,
+      }}>{value}</div>
+    </div>
+  );
+}
+
+function ChartFrame({ children, height = 200 }) {
+  return (
+    <div style={{
+      position: 'relative',
+      background: '#040810',
+      border: `1px solid ${PALETTE.border}`,
+      borderRadius: 8,
+      padding: '6px 4px',
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), inset 0 0 30px rgba(0,0,0,0.5)',
+      height,
+    }}>{children}</div>
+  );
+}
+
+function DateTooltip({ active, payload, suffix = '', color }) {
+  if (!active || !payload || !payload.length) return null;
+  const ms = payload[0] && payload[0].payload && payload[0].payload.dateMs;
+  const d  = ms ? new Date(ms) : null;
+  return (
+    <div style={{
+      background: 'rgba(8,12,22,0.96)',
+      border: `1px solid ${PALETTE.borderHi}`,
+      borderRadius: 8,
+      padding: '10px 14px',
+      fontFamily: 'Space Mono', fontSize: 12,
+      color: PALETTE.text,
+      boxShadow: '0 18px 38px rgba(0,0,0,0.7), inset 0 1px 0 rgba(255,255,255,0.05)',
+      minWidth: 150,
+    }}>
+      <div style={{ color: PALETTE.text, marginBottom: 6, letterSpacing: '0.04em' }}>
+        {d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' }) : ''}
+      </div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: color || p.color }}>
+          <span style={{ textTransform: 'capitalize' }}>{p.name || p.dataKey}</span>
+          <span>{typeof p.value === 'number' ? (p.value >= 0 ? '+' : '') + p.value.toFixed(2) : p.value}{suffix || '%'}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function TermTooltip({ active, payload, label, suffix = '' }) {
+  if (!active || !payload || !payload.length) return null;
+  return (
+    <div style={{
+      background: 'rgba(4,8,16,0.95)',
+      border: `1px solid ${PALETTE.border}`,
+      borderRadius: 6,
+      padding: '8px 12px',
+      fontFamily: 'Space Mono', fontSize: 11,
+      color: PALETTE.text,
+      boxShadow: '0 12px 28px rgba(0,0,0,0.6)',
+    }}>
+      <div style={{ color: PALETTE.textMute, letterSpacing: '0.14em', marginBottom: 4 }}>{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ display: 'flex', justifyContent: 'space-between', gap: 14, color: p.color }}>
+          <span>{p.dataKey}</span>
+          <span>{typeof p.value === 'number' ? p.value.toFixed(2) : p.value}{suffix}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// =============================================================
+// STOCK DASHBOARD ROOT
+// =============================================================
+function StockDashboard({ onBack }) {
+  const [loaded, setLoaded] = _sUseState(false);
+  const [active, setActive] = _sUseState(null);
+  const [error, setError] = _sUseState(null);
+
+  _sUseEffect(() => {
+    const id = setTimeout(() => setLoaded(true), 600);
+    return () => clearTimeout(id);
+  }, []);
+
+  const counts = _sUseMemo(() => {
+    const buckets = { 'BUY MORE': [], 'SQUARE OFF': [], 'NEUTRAL': [] };
+    STOCKS.forEach((s) => buckets[s.signal].push(s.ticker));
+    return buckets;
+  }, []);
+
+  return (
+    <div style={{ position: 'relative', minHeight: '100vh', background: PALETTE.bg, color: PALETTE.text }}>
+      <PerspectiveGrid />
+      <div style={{ position: 'relative', zIndex: 5 }}>
+        <TerminalHeader
+          title="SIGNAL WATCH"
+          mode="STOCK SIGNALS"
+          onBack={onBack}
+          badges={[
+            <HeaderCountPill key="b"  label="Buy More"   count={counts['BUY MORE'].length}   color={PALETTE.bullish} tickers={counts['BUY MORE']} />,
+            <HeaderCountPill key="s"  label="Square Off" count={counts['SQUARE OFF'].length} color={PALETTE.bearish} tickers={counts['SQUARE OFF']} />,
+            <HeaderCountPill key="n"  label="Neutral"    count={counts['NEUTRAL'].length}    color={PALETTE.neutral} tickers={counts['NEUTRAL']} />,
+          ]} />
+
+        {error ? (
+          <div style={{
+            margin: '18px clamp(14px, 3vw, 28px)', padding: '12px 16px',
+            background: `linear-gradient(180deg, ${PALETTE.amber}1F, ${PALETTE.amber}08)`,
+            border: `1px solid ${PALETTE.amber}66`, borderRadius: 8,
+            color: PALETTE.amber, fontFamily: 'Space Mono', fontSize: 12,
+            letterSpacing: '0.14em',
+          }}>⚠  {error}</div>
+        ) : null}
+
+        <main style={{ padding: 'clamp(18px, 3vw, 28px)' }}>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+            gap: 'clamp(16px, 2vw, 22px)',
+          }}>
+            {!loaded
+              ? Array.from({ length: 8 }).map((_, i) => <SkeletonCard key={i} idx={i} />)
+              : STOCKS.map((s, i) => <StockCard key={s.ticker} s={s} idx={i} onOpen={setActive} />)
+            }
+          </div>
+        </main>
+      </div>
+
+      {active ? <StockDrawer stock={active} onClose={() => setActive(null)} /> : null}
+    </div>
+  );
+}
+
+Object.assign(window, { StockDashboard, HeaderCountPill, CountNumber, ChartFrame, SectionLabel, Metric, TermTooltip });
+
+
+//============================================
+
+// portfolio-dashboard.jsx — Portfolio dashboard with signal strip + tabs
+const { useState: _pUseState, useEffect: _pUseEffect, useMemo: _pUseMemo } = React;
+const RC2 = window.Recharts;
+
+// =============================================================
+// SIGNAL STRIP — 5 columns
+// =============================================================
+function SignalStripItem({ label, color, children, sub }) {
+  return (
+    <div style={{
+      flex: '1 1 0',
+      minWidth: 130,
+      padding: 'clamp(14px, 2vw, 22px) clamp(14px, 2vw, 24px)',
+      borderRight: `1px solid ${PALETTE.border}`,
+      display: 'flex', flexDirection: 'column', gap: 6,
+    }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 8,
+        fontFamily: 'Chakra Petch', fontSize: 10,
+        letterSpacing: '0.26em', textTransform: 'uppercase',
+        color: PALETTE.textMute,
+      }}>
+        {color ? <PulsingDot color={color} size={6} /> : null}
+        <span>{label}</span>
+      </div>
+      <div>{children}</div>
+      {sub ? <div style={{
+        fontFamily: 'Space Mono', fontSize: 10, color: PALETTE.textMute,
+        letterSpacing: '0.14em',
+      }}>{sub}</div> : null}
+    </div>
+  );
+}
+
+function PortfolioSignalStrip({ p }) {
+  const meta = SIGNAL_META[p.signal];
+  const ytdColor = p.ytdReturn >= 0 ? PALETTE.bullish : PALETTE.bearish;
+  const pnlColor = p.totalPnl  >= 0 ? PALETTE.bullish : PALETTE.bearish;
+  return (
+    <div style={{
+      margin: '0 clamp(14px, 3vw, 28px)',
+      marginTop: 18,
+      background: `linear-gradient(180deg, ${PALETTE.surfaceHi}, ${PALETTE.surface})`,
+      border: `1px solid ${PALETTE.border}`,
+      borderRadius: 12,
+      boxShadow: panelShadow(false, 1),
+      display: 'flex', flexWrap: 'wrap',
+      overflow: 'hidden',
+    }}>
+      <SignalStripItem label="Signal" color={meta.color}>
+        <span style={{
+          fontFamily: 'Chakra Petch', fontWeight: 700, fontSize: 22,
+          letterSpacing: '0.04em', color: meta.color,
+          textShadow: `0 0 14px ${meta.color}66`,
+        }}>{p.signal}</span>
+      </SignalStripItem>
+      <SignalStripItem label="YTD Return" sub="vs entry">
+        <CountNumber
+          value={p.ytdReturn}
+          decimals={2}
+          suffix="%"
+          prefix={p.ytdReturn >= 0 ? '+' : ''}
+          color={ytdColor}
+          style={{ fontWeight: 700, fontSize: 22 }} />
+      </SignalStripItem>
+      <SignalStripItem label="Total PnL" sub={`Realised ${fmtUsd(PORTFOLIO.realizedPnl, 0)}`}>
+        <CountNumber
+          value={p.totalPnl}
+          decimals={0}
+          prefix={p.totalPnl >= 0 ? '+$' : '-$'}
+          color={pnlColor}
+          style={{ fontWeight: 700, fontSize: 22 }} />
+      </SignalStripItem>
+      <SignalStripItem label="1W ATR" sub={`Avg vol`}>
+        <CountNumber value={p.atr1W} decimals={2} color={PALETTE.amber}
+          style={{ fontWeight: 700, fontSize: 22 }} />
+      </SignalStripItem>
+      <SignalStripItem label="1M ATR" sub={`Trend vol`}>
+        <CountNumber value={p.atr1M} decimals={2} color={PALETTE.cyan}
+          style={{ fontWeight: 700, fontSize: 22, borderRight: 'none' }} />
+      </SignalStripItem>
+    </div>
+  );
+}
+
+// =============================================================
+// TABS
+// =============================================================
+function Tabs({ value, onChange, options }) {
+  return (
+    <div style={{
+      display: 'inline-flex',
+      background: PALETTE.surface,
+      border: `1px solid ${PALETTE.border}`,
+      borderRadius: 10,
+      padding: 4,
+      boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.04), inset 0 -1px 0 rgba(0,0,0,0.5)',
+    }}>
+      {options.map((o) => {
+        const active = value === o.value;
+        return (
+          <button key={o.value} onClick={() => onChange(o.value)}
+            style={{
+              padding: '9px 18px', borderRadius: 7,
+              border: 'none',
+              background: active ? `linear-gradient(180deg, ${PALETTE.cyan}28, ${PALETTE.cyan}10)` : 'transparent',
+              color: active ? PALETTE.cyan : PALETTE.textDim,
+              fontFamily: 'Chakra Petch', fontWeight: 600, fontSize: 12,
+              letterSpacing: '0.22em', textTransform: 'uppercase',
+              cursor: 'pointer',
+              boxShadow: active ? `inset 0 1px 0 rgba(255,255,255,0.1), 0 0 14px ${PALETTE.cyan}33` : 'none',
+              transition: 'all 200ms ease',
+            }}>{o.label}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+// =============================================================
+// CHARTS TAB
+// =============================================================
+function ChartsTab({ p }) {
+  const data = p.returnHistory.map((d) => {
+    const fit = +(p.trend.slope * d.idx).toFixed(2);
+    return { ...d, fit };
+  });
+  const fmtTick = (ms) => {
+    const d = new Date(ms);
+    return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short' });
+  };
+  return (
+    <div style={{ display: 'grid', gap: 18 }}>
+      <PanelCard
+        title="Portfolio Return (YTD %)"
+        subtitle={`Slope ${p.trend.slope.toFixed(3)}%/wk · Angle ${p.trend.angle.toFixed(2)}° · R² ${p.trend.r2.toFixed(3)}`}
+        right={<TrendBadge p={p} />}
+      >
+        <div style={{ height: 340 }}>
+          <RC2.ResponsiveContainer>
+            <RC2.AreaChart data={data} margin={{ top: 16, right: 18, left: -4, bottom: 4 }}>
+              <defs>
+                <linearGradient id="pretfill" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={PALETTE.neutral} stopOpacity={0.55} />
+                  <stop offset="100%" stopColor={PALETTE.neutral} stopOpacity={0.0} />
+                </linearGradient>
+              </defs>
+              <RC2.CartesianGrid stroke={PALETTE.border} strokeDasharray="2 6" vertical={false} />
+              <RC2.XAxis
+                dataKey="dateMs"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                scale="time"
+                tickFormatter={fmtTick}
+                tickCount={6}
+                tick={{ fill: PALETTE.textMute, fontSize: 11, fontFamily: 'Space Mono' }}
+                stroke={PALETTE.border} />
+              <RC2.YAxis
+                tickFormatter={(v) => `${v.toFixed(1)}%`}
+                tick={{ fill: PALETTE.textMute, fontSize: 11, fontFamily: 'Space Mono' }}
+                stroke={PALETTE.border} />
+              <RC2.Tooltip content={<DateTooltip label="YTD Return" suffix="%" color={PALETTE.neutral} />} cursor={{ stroke: PALETTE.text, strokeOpacity: 0.4, strokeWidth: 1 }} />
+              <RC2.ReferenceLine y={0} stroke={PALETTE.border} strokeDasharray="3 3" />
+              <RC2.Area dataKey="ret" type="monotone" stroke={PALETTE.neutral} fill="url(#pretfill)" strokeWidth={2.6} animationDuration={1300}
+                activeDot={{ r: 5, fill: PALETTE.neutral, stroke: '#fff', strokeWidth: 2 }} />
+              <RC2.Line dataKey="fit" type="linear" stroke={PALETTE.amber} strokeDasharray="6 6" strokeWidth={1.4} dot={false} animationDuration={1500} />
+            </RC2.AreaChart>
+          </RC2.ResponsiveContainer>
+        </div>
+      </PanelCard>
+
+      <PanelCard title="Volatility (ATR)" subtitle="1W vs 1M">
+        <div style={{ height: 240 }}>
+          <RC2.ResponsiveContainer>
+            <RC2.LineChart data={p.atrHistory} margin={{ top: 12, right: 18, left: -6, bottom: 4 }}>
+              <RC2.CartesianGrid stroke={PALETTE.border} strokeDasharray="2 6" vertical={false} />
+              <RC2.XAxis
+                dataKey="dateMs"
+                type="number"
+                domain={['dataMin', 'dataMax']}
+                scale="time"
+                tickFormatter={fmtTick}
+                tickCount={6}
+                tick={{ fill: PALETTE.textMute, fontSize: 11, fontFamily: 'Space Mono' }}
+                stroke={PALETTE.border} />
+              <RC2.YAxis tick={{ fill: PALETTE.textMute, fontSize: 11, fontFamily: 'Space Mono' }} stroke={PALETTE.border} />
+              <RC2.Tooltip content={<DateTooltip />} cursor={{ stroke: PALETTE.text, strokeOpacity: 0.4 }} />
+              <RC2.Line dataKey="atr1W" name="1W ATR" type="monotone" stroke={PALETTE.amber}  strokeWidth={2} dot={false} animationDuration={1200} />
+              <RC2.Line dataKey="atr1M" name="1M ATR" type="monotone" stroke={PALETTE.neutral} strokeWidth={2} dot={false} animationDuration={1300} />
+            </RC2.LineChart>
+          </RC2.ResponsiveContainer>
+        </div>
+        <div style={{
+          display: 'flex', gap: 22, justifyContent: 'center',
+          marginTop: 8, fontFamily: 'Space Mono', fontSize: 11,
+          color: PALETTE.textDim, letterSpacing: '0.14em',
+        }}>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 14, height: 2, background: PALETTE.amber, boxShadow: `0 0 6px ${PALETTE.amber}` }} />
+            1W ATR
+          </span>
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ width: 14, height: 2, background: PALETTE.neutral, boxShadow: `0 0 6px ${PALETTE.neutral}` }} />
+            1M ATR
+          </span>
+        </div>
+      </PanelCard>
+    </div>
+  );
+}
+
+function TrendBadge({ p }) {
+  return (
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 8,
+      background: `linear-gradient(180deg, ${PALETTE.amber}28, ${PALETTE.amber}0A)`,
+      border: `1px solid ${PALETTE.amber}66`,
+      padding: '6px 12px', borderRadius: 999,
+      fontFamily: 'Space Mono', fontSize: 11,
+      color: PALETTE.amber, letterSpacing: '0.16em',
+      boxShadow: `inset 0 1px 0 rgba(255,255,255,0.12), 0 0 14px ${PALETTE.amber}33`,
+    }}>
+      <span>SLP {p.trend.slope.toFixed(2)}</span>
+      <span style={{ opacity: 0.6 }}>·</span>
+      <span>{p.trend.angle.toFixed(1)}°</span>
+      <span style={{ opacity: 0.6 }}>·</span>
+      <span>R² {p.trend.r2.toFixed(2)}</span>
+    </span>
+  );
+}
+
+// =============================================================
+// INFO TAB
+// =============================================================
+function InfoTab({ p }) {
+  const sorted = _pUseMemo(
+    () => [...p.holdings].sort((a, b) => b.market - a.market),
+    [p.holdings]
+  );
+  const totals = _pUseMemo(() => ({
+    invested: p.holdings.reduce((a, h) => a + h.invested, 0),
+    market:   p.holdings.reduce((a, h) => a + h.market,   0),
+    pnl:      p.holdings.reduce((a, h) => a + h.pnl,      0),
+  }), [p.holdings]);
+  const totalReturnPct = ((totals.market - totals.invested) / totals.invested) * 100;
+
+  return (
+    <div style={{ display: 'grid', gap: 18 }}>
+      <PanelCard title="Holdings" subtitle={`${p.holdings.length} positions`}>
+        <div style={{ overflowX: 'auto' }}>
+          <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 720 }}>
+            <thead>
+              <tr style={{ borderBottom: `1px solid ${PALETTE.border}` }}>
+                {['Ticker', 'Qty', 'Entry', 'Live', 'Invested', 'Market', 'PnL', 'Return'].map((h, i) => (
+                  <th key={h} style={{
+                    textAlign: i === 0 ? 'left' : 'right',
+                    padding: '10px 14px',
+                    fontFamily: 'Chakra Petch', fontWeight: 600, fontSize: 10,
+                    letterSpacing: '0.22em', textTransform: 'uppercase',
+                    color: PALETTE.textMute,
+                  }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {sorted.map((h, i) => {
+                const pos = h.pnl >= 0;
+                return (
+                  <tr key={h.ticker} style={{
+                    borderBottom: `1px solid ${PALETTE.border}55`,
+                    background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)',
+                  }}>
+                    <td style={cellStyle('left', { fontFamily: 'Chakra Petch', fontWeight: 700, fontSize: 13, color: PALETTE.text, letterSpacing: '0.06em' })}>
+                      {h.ticker}
+                    </td>
+                    <td style={cellStyle()}>{h.qty.toFixed(2)}</td>
+                    <td style={cellStyle()}>{fmtUsd(h.entry)}</td>
+                    <td style={cellStyle()}>{fmtUsd(h.live)}</td>
+                    <td style={cellStyle()}>{fmtUsd(h.invested, 0)}</td>
+                    <td style={cellStyle()}>{fmtUsd(h.market, 0)}</td>
+                    <td style={cellStyle('right', { color: pos ? PALETTE.bullish : PALETTE.bearish, fontWeight: 700 })}>
+                      {pos ? '+' : ''}{fmtUsd(h.pnl, 0)}
+                    </td>
+                    <td style={cellStyle('right', { color: pos ? PALETTE.bullish : PALETTE.bearish, fontWeight: 700 })}>
+                      {fmtPct(h.returnPct)}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr style={{
+                borderTop: `1px solid ${PALETTE.borderHi}`,
+                background: `linear-gradient(180deg, ${PALETTE.surfaceHi}, ${PALETTE.surface})`,
+              }}>
+                <td style={cellStyle('left', { fontFamily: 'Chakra Petch', fontWeight: 700, fontSize: 12, letterSpacing: '0.18em', textTransform: 'uppercase', color: PALETTE.textDim })}>
+                  Totals
+                </td>
+                <td style={cellStyle()}>—</td>
+                <td style={cellStyle()}>—</td>
+                <td style={cellStyle()}>—</td>
+                <td style={cellStyle('right', { color: PALETTE.text, fontWeight: 700 })}>{fmtUsd(totals.invested, 0)}</td>
+                <td style={cellStyle('right', { color: PALETTE.text, fontWeight: 700 })}>{fmtUsd(totals.market,   0)}</td>
+                <td style={cellStyle('right', { color: totals.pnl >= 0 ? PALETTE.bullish : PALETTE.bearish, fontWeight: 700 })}>
+                  {totals.pnl >= 0 ? '+' : ''}{fmtUsd(totals.pnl, 0)}
+                </td>
+                <td style={cellStyle('right', { color: totalReturnPct >= 0 ? PALETTE.bullish : PALETTE.bearish, fontWeight: 700 })}>
+                  {fmtPct(totalReturnPct)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </PanelCard>
+
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+        gap: 18,
+      }}>
+        <PanelCard title="Portfolio Metrics">
+          <MetricRow label="Total Invested"  value={fmtUsd(totals.invested, 0)} />
+          <MetricRow label="Market Value"    value={fmtUsd(totals.market, 0)} />
+          <MetricRow label="Unrealised PnL"  value={`${totals.pnl >= 0 ? '+' : ''}${fmtUsd(totals.pnl, 0)}`} color={totals.pnl >= 0 ? PALETTE.bullish : PALETTE.bearish} />
+          <MetricRow label="Realised PnL"    value={fmtUsd(p.realizedPnl, 0)} color={PALETTE.bullish} />
+          <MetricRow label="Win Rate"        value={`${p.metrics.winRate}%`} color={PALETTE.cyan} />
+          <MetricRow label="Sharpe (3M)"     value={p.metrics.sharpe.toFixed(2)} color={PALETTE.cyan} />
+        </PanelCard>
+
+        <PanelCard title="Trend Metrics">
+          <MetricRow label="Slope"           value={p.trend.slope.toFixed(2)} />
+          <MetricRow label="Slope Angle"     value={`${p.trend.angle.toFixed(1)}°`} color={PALETTE.amber} />
+          <MetricRow label="R²"              value={p.trend.r2.toFixed(2)} color={PALETTE.cyan} />
+          <MetricRow label="1W ATR"          value={p.atr1W.toFixed(2)} color={PALETTE.amber} />
+          <MetricRow label="1M ATR"          value={p.atr1M.toFixed(2)} color={PALETTE.neutral} />
+          <MetricRow label="Volatility"      value={`${p.metrics.volatility.toFixed(1)}%`} />
+          <MetricRow label="Best Week"       value={`${p.metrics.bestWeek.week} · ${fmtPct(p.metrics.bestWeek.value)}`} color={PALETTE.bullish} />
+          <MetricRow label="Worst Week"      value={`${p.metrics.worstWeek.week} · ${fmtPct(p.metrics.worstWeek.value)}`} color={PALETTE.bearish} />
+          <MetricRow label="Max Drawdown"    value={fmtPct(p.metrics.maxDrawdown)} color={PALETTE.bearish} />
+        </PanelCard>
+      </div>
+    </div>
+  );
+}
+
+function cellStyle(align = 'right', extra = {}) {
+  return {
+    padding: '10px 14px',
+    textAlign: align,
+    fontFamily: 'Space Mono', fontSize: 12,
+    color: PALETTE.textDim, fontVariantNumeric: 'tabular-nums',
+    ...extra,
+  };
+}
+
+function MetricRow({ label, value, color = PALETTE.text }) {
+  return (
+    <div style={{
+      display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+      padding: '10px 0',
+      borderBottom: `1px solid ${PALETTE.border}55`,
+    }}>
+      <span style={{
+        fontFamily: 'Chakra Petch', fontSize: 11,
+        letterSpacing: '0.22em', textTransform: 'uppercase', color: PALETTE.textMute,
+      }}>{label}</span>
+      <span style={{
+        fontFamily: 'Space Mono', fontWeight: 700, fontSize: 14, color,
+      }}>{value}</span>
+    </div>
+  );
+}
+
+// =============================================================
+// PANEL CARD
+// =============================================================
+function PanelCard({ title, subtitle, right, children }) {
+  return (
+    <section style={{
+      position: 'relative',
+      background: `linear-gradient(165deg, ${PALETTE.surfaceHi} 0%, ${PALETTE.surface} 60%, #060c18 100%)`,
+      border: `1px solid ${PALETTE.border}`,
+      borderRadius: 12,
+      padding: 'clamp(16px, 2.4vw, 22px)',
+      boxShadow: panelShadow(false, 1),
+    }}>
+      <header style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        marginBottom: 14, gap: 10,
+      }}>
+        <div>
+          <div style={{
+            fontFamily: 'Chakra Petch', fontWeight: 600, fontSize: 13,
+            letterSpacing: '0.22em', textTransform: 'uppercase', color: PALETTE.text,
+          }}>{title}</div>
+          {subtitle ? <div style={{
+            fontFamily: 'Space Mono', fontSize: 10, marginTop: 3,
+            color: PALETTE.textMute, letterSpacing: '0.14em', textTransform: 'uppercase',
+          }}>{subtitle}</div> : null}
+        </div>
+        {right}
+      </header>
+      {children}
+    </section>
+  );
+}
+
+// =============================================================
+// PORTFOLIO DASHBOARD ROOT
+// =============================================================
+function PortfolioDashboard({ onBack }) {
+  const [tab, setTab] = _pUseState('charts');
+  const [loaded, setLoaded] = _pUseState(false);
+  _pUseEffect(() => { const id = setTimeout(() => setLoaded(true), 500); return () => clearTimeout(id); }, []);
+
+  return (
+    <div style={{ position: 'relative', minHeight: '100vh', background: PALETTE.bg, color: PALETTE.text }}>
+      <PerspectiveGrid />
+      <div style={{ position: 'relative', zIndex: 5 }}>
+        <TerminalHeader
+          title="SIGNAL WATCH"
+          mode="PORTFOLIO"
+          onBack={onBack}
+          badges={[
+            <HeaderCountPill key="ho" label="Holdings" count={PORTFOLIO.holdings.length} color={PALETTE.cyan}    tickers={PORTFOLIO.holdings.map(h => h.ticker)} />,
+            <HeaderCountPill key="up" label="Winners"  count={PORTFOLIO.holdings.filter(h => h.pnl >= 0).length} color={PALETTE.bullish} tickers={PORTFOLIO.holdings.filter(h => h.pnl >= 0).map(h => h.ticker)} />,
+            <HeaderCountPill key="dn" label="Losers"   count={PORTFOLIO.holdings.filter(h => h.pnl < 0).length}  color={PALETTE.bearish} tickers={PORTFOLIO.holdings.filter(h => h.pnl < 0).map(h => h.ticker)} />,
+          ]} />
+
+        <PortfolioSignalStrip p={PORTFOLIO} />
+
+        <div style={{
+          display: 'flex', justifyContent: 'flex-end',
+          padding: '20px clamp(14px, 3vw, 28px) 0',
+        }}>
+          <Tabs value={tab} onChange={setTab}
+            options={[{ value: 'charts', label: 'Charts' }, { value: 'info', label: 'Info' }]} />
+        </div>
+
+        <main style={{ padding: 'clamp(18px, 3vw, 28px)' }}>
+          {!loaded ? (
+            <div style={{ display: 'grid', gap: 16 }}>
+              <div className="sw-shimmer" style={{ height: 320, borderRadius: 12 }} />
+              <div className="sw-shimmer" style={{ height: 220, borderRadius: 12 }} />
+            </div>
+          ) : tab === 'charts' ? <ChartsTab p={PORTFOLIO} /> : <InfoTab p={PORTFOLIO} />}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+Object.assign(window, { PortfolioDashboard, PanelCard });
+
+
+//============================================
+
+// app.jsx — root component, mode router
+const { useState: _aUseState, useEffect: _aUseEffect } = React;
+
+function App() {
+  _aUseEffect(() => { injectGlobalStyles(); }, []);
+  const [mode, setMode] = _aUseState('entry'); // 'entry' | 'stocks' | 'portfolio'
+
+  return (
+    <div style={{ minHeight: '100vh', background: PALETTE.bg, color: PALETTE.text }}>
+      {mode === 'entry' ? (
+        <EntryScreen
+          onSelectStocks={() => setMode('stocks')}
+          onSelectPortfolio={() => setMode('portfolio')} />
+      ) : mode === 'stocks' ? (
+        <StockDashboard onBack={() => setMode('entry')} />
+      ) : (
+        <PortfolioDashboard onBack={() => setMode('entry')} />
+      )}
+    </div>
+  );
+}
+
+const _root = ReactDOM.createRoot(document.getElementById('root'));
+_root.render(<App />);
+
+</script>
+</body>
+</html>
